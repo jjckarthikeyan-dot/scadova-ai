@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -48,19 +49,31 @@ supabase: Client = create_client(
 
 
 # ---------------------------------------------------------
-# REQUEST MODELS
+# RETELL REQUEST MODELS
 # ---------------------------------------------------------
 
-class MenuSearchRequest(BaseModel):
+class MenuSearchArgs(BaseModel):
     business_id: str
     query: str | None = None
     category: str | None = None
     diet: str | None = None
 
 
-class MenuItemRequest(BaseModel):
+class RetellMenuSearchRequest(BaseModel):
+    name: str | None = None
+    call: dict[str, Any] | None = None
+    args: MenuSearchArgs
+
+
+class MenuItemArgs(BaseModel):
     business_id: str
     item_name: str
+
+
+class RetellMenuItemRequest(BaseModel):
+    name: str | None = None
+    call: dict[str, Any] | None = None
+    args: MenuItemArgs
 
 
 # ---------------------------------------------------------
@@ -68,10 +81,6 @@ class MenuItemRequest(BaseModel):
 # ---------------------------------------------------------
 
 def get_business(business_id: str):
-    """
-    Get an active restaurant business using business_key.
-    """
-
     result = (
         supabase
         .table("businesses")
@@ -108,10 +117,6 @@ def get_business(business_id: str):
 
 
 def clean_diet_value(diet: str | None):
-    """
-    Normalize common values Retell may send.
-    """
-
     if not diet:
         return None
 
@@ -139,10 +144,6 @@ def clean_diet_value(diet: str | None):
 
 
 def format_menu_item(item: dict):
-    """
-    Return a clean response suitable for Retell and frontend.
-    """
-
     return {
         "id": item.get("id"),
         "name": item.get("name"),
@@ -150,28 +151,24 @@ def format_menu_item(item: dict):
         "diet_type": item.get("diet_type"),
         "price": item.get("price"),
         "description": item.get("description"),
-
         "is_vegan": item.get("is_vegan"),
         "is_gluten_free": item.get("is_gluten_free"),
         "is_nut_free": item.get("is_nut_free"),
         "is_dairy_free": item.get("is_dairy_free"),
         "is_spicy": item.get("is_spicy"),
-
         "available": item.get("available")
     }
 
 
 # ---------------------------------------------------------
-# MENU SEARCH
+# SEARCH MENU
 # ---------------------------------------------------------
 
 @router.post("/search")
-def search_menu(request: MenuSearchRequest):
-    """
-    Search a restaurant's live menu.
-    """
-
+def search_menu(payload: RetellMenuSearchRequest):
     try:
+        request = payload.args
+
         business = get_business(request.business_id)
 
         db_query = (
@@ -195,10 +192,6 @@ def search_menu(request: MenuSearchRequest):
             .eq("available", True)
         )
 
-        # ---------------------------------------------
-        # CATEGORY FILTER
-        # ---------------------------------------------
-
         if request.category:
             category = request.category.strip()
 
@@ -208,10 +201,6 @@ def search_menu(request: MenuSearchRequest):
                     f"%{category}%"
                 )
 
-        # ---------------------------------------------
-        # DIET FILTER
-        # ---------------------------------------------
-
         diet = clean_diet_value(request.diet)
 
         if diet:
@@ -219,10 +208,6 @@ def search_menu(request: MenuSearchRequest):
                 "diet_type",
                 diet
             )
-
-        # ---------------------------------------------
-        # SEARCH TERM
-        # ---------------------------------------------
 
         if request.query:
             search_text = request.query.strip()
@@ -233,15 +218,11 @@ def search_menu(request: MenuSearchRequest):
                     f"%{search_text}%"
                 )
 
-        # ---------------------------------------------
-        # EXECUTE
-        # ---------------------------------------------
-
         result = (
             db_query
             .order("category")
             .order("name")
-            .limit(25)
+            .limit(50)
             .execute()
         )
 
@@ -276,7 +257,6 @@ def search_menu(request: MenuSearchRequest):
         return {
             "success": False,
             "found": False,
-            "business_id": request.business_id,
             "message": str(e),
             "items": []
         }
@@ -287,12 +267,10 @@ def search_menu(request: MenuSearchRequest):
 # ---------------------------------------------------------
 
 @router.post("/item")
-def get_menu_item(request: MenuItemRequest):
-    """
-    Retrieve details for one menu item.
-    """
-
+def get_menu_item(payload: RetellMenuItemRequest):
     try:
+        request = payload.args
+
         business = get_business(request.business_id)
 
         item_name = request.item_name.strip()
@@ -328,7 +306,7 @@ def get_menu_item(request: MenuItemRequest):
                 f"%{item_name}%"
             )
             .order("name")
-            .limit(5)
+            .limit(10)
             .execute()
         )
 
@@ -373,7 +351,6 @@ def get_menu_item(request: MenuItemRequest):
         return {
             "success": False,
             "found": False,
-            "business_id": request.business_id,
             "message": str(e),
             "items": []
         }
@@ -385,10 +362,6 @@ def get_menu_item(request: MenuItemRequest):
 
 @router.get("/categories/{business_id}")
 def get_menu_categories(business_id: str):
-    """
-    Return all available menu categories for one restaurant.
-    """
-
     try:
         business = get_business(business_id)
 
@@ -427,7 +400,7 @@ def get_menu_categories(business_id: str):
 
 
 # ---------------------------------------------------------
-# SIMPLE MENU HEALTH CHECK
+# HEALTH CHECK
 # ---------------------------------------------------------
 
 @router.get("/health")
@@ -435,6 +408,5 @@ def menu_health():
     return {
         "success": True,
         "module": "restaurant-menu",
-        "status": "running",
-        "env_file": str(ENV_PATH)
+        "status": "running"
     }
