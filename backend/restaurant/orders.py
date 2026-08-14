@@ -2,6 +2,7 @@ import os
 import uuid
 from pathlib import Path
 from datetime import date, time
+from typing import Any
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
@@ -34,6 +35,10 @@ supabase: Client = create_client(
 )
 
 
+# ---------------------------------------------------------
+# ROUTER
+# ---------------------------------------------------------
+
 router = APIRouter()
 
 
@@ -47,7 +52,7 @@ class OrderItemRequest(BaseModel):
     special_instructions: str | None = None
 
 
-class CreateOrderRequest(BaseModel):
+class CreateOrderArgs(BaseModel):
     business_id: str
 
     customer_name: str
@@ -60,6 +65,12 @@ class CreateOrderRequest(BaseModel):
 
     allergy_notes: str | None = None
     order_notes: str | None = None
+
+
+class RetellCreateOrderRequest(BaseModel):
+    name: str | None = None
+    call: dict[str, Any] | None = None
+    args: CreateOrderArgs
 
 
 # ---------------------------------------------------------
@@ -142,11 +153,18 @@ def find_menu_item(business_db_id: int, item_name: str):
 # ---------------------------------------------------------
 
 @router.post("/create")
-def create_order(request: CreateOrderRequest):
+def create_order(payload: RetellCreateOrderRequest):
 
     created_order_id = None
 
     try:
+
+        # -------------------------------------------------
+        # 0. EXTRACT RETELL ARGS
+        # -------------------------------------------------
+
+        request = payload.args
+
 
         # -------------------------------------------------
         # 1. BUSINESS
@@ -157,6 +175,7 @@ def create_order(request: CreateOrderRequest):
         if not request.items:
             return {
                 "success": False,
+                "order_confirmed": False,
                 "message": "The order must contain at least one item."
             }
 
@@ -180,6 +199,7 @@ def create_order(request: CreateOrderRequest):
 
                 return {
                     "success": False,
+                    "order_confirmed": False,
                     "message": (
                         f"{requested_item.item_name} "
                         "is not currently available on the menu."
@@ -381,8 +401,10 @@ def create_order(request: CreateOrderRequest):
         )
 
 
-        # Best-effort cleanup if order was inserted
-        # but order_items failed.
+        # -------------------------------------------------
+        # BEST-EFFORT CLEANUP
+        # -------------------------------------------------
+
         if created_order_id:
 
             try:
@@ -430,9 +452,7 @@ def get_order(
         result = (
             supabase
             .table("orders")
-            .select(
-                "*"
-            )
+            .select("*")
             .eq(
                 "business_id",
                 business["id"]
