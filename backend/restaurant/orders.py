@@ -49,6 +49,11 @@ router = APIRouter()
 class OrderItemRequest(BaseModel):
     item_name: str
     quantity: int = Field(default=1, ge=1, le=50)
+
+    # Optional because spice level does not apply
+    # to every menu item.
+    spice_level: str | None = None
+
     special_instructions: str | None = None
 
 
@@ -67,6 +72,14 @@ class CreateOrderArgs(BaseModel):
     order_notes: str | None = None
 
 
+# Retell sends:
+#
+# {
+#   "name": "create_order",
+#   "call": {...},
+#   "args": {...}
+# }
+
 class RetellCreateOrderRequest(BaseModel):
     name: str | None = None
     call: dict[str, Any] | None = None
@@ -78,6 +91,7 @@ class RetellCreateOrderRequest(BaseModel):
 # ---------------------------------------------------------
 
 def get_business(business_id: str):
+
     result = (
         supabase
         .table("businesses")
@@ -113,14 +127,22 @@ def get_business(business_id: str):
 
 
 def generate_order_number():
+
     short_id = uuid.uuid4().hex[:8].upper()
+
     return f"ORD-{short_id}"
 
 
-def find_menu_item(business_db_id: int, item_name: str):
+def find_menu_item(
+    business_db_id: int,
+    item_name: str
+):
+
     """
-    Finds a live available menu item.
+    Find an available menu item using the live menu database.
     """
+
+    clean_name = item_name.strip()
 
     result = (
         supabase
@@ -133,9 +155,18 @@ def find_menu_item(business_db_id: int, item_name: str):
             "diet_type,"
             "available"
         )
-        .eq("business_id", business_db_id)
-        .eq("available", True)
-        .ilike("name", item_name.strip())
+        .eq(
+            "business_id",
+            business_db_id
+        )
+        .eq(
+            "available",
+            True
+        )
+        .ilike(
+            "name",
+            clean_name
+        )
         .limit(1)
         .execute()
     )
@@ -153,40 +184,62 @@ def find_menu_item(business_db_id: int, item_name: str):
 # ---------------------------------------------------------
 
 @router.post("/create")
-def create_order(payload: RetellCreateOrderRequest):
+def create_order(
+    payload: RetellCreateOrderRequest
+):
 
     created_order_id = None
 
     try:
 
         # -------------------------------------------------
-        # 0. EXTRACT RETELL ARGS
+        # 0. GET FUNCTION ARGUMENTS FROM RETELL
         # -------------------------------------------------
 
         request = payload.args
 
 
         # -------------------------------------------------
-        # 1. BUSINESS
+        # 1. VALIDATE BUSINESS
         # -------------------------------------------------
 
-        business = get_business(request.business_id)
+        business = get_business(
+            request.business_id
+        )
+
+
+        # -------------------------------------------------
+        # 2. VALIDATE ORDER
+        # -------------------------------------------------
 
         if not request.items:
+
             return {
                 "success": False,
                 "order_confirmed": False,
-                "message": "The order must contain at least one item."
+                "message":
+                    "The order must contain at least one item."
+            }
+
+
+        if not request.customer_name.strip():
+
+            return {
+                "success": False,
+                "order_confirmed": False,
+                "message":
+                    "Customer name is required."
             }
 
 
         # -------------------------------------------------
-        # 2. VALIDATE MENU ITEMS
+        # 3. VALIDATE LIVE MENU ITEMS
         # -------------------------------------------------
 
         validated_items = []
 
         subtotal = 0.0
+
 
         for requested_item in request.items:
 
@@ -194,6 +247,7 @@ def create_order(payload: RetellCreateOrderRequest):
                 business["id"],
                 requested_item.item_name
             )
+
 
             if not menu_item:
 
@@ -206,54 +260,121 @@ def create_order(payload: RetellCreateOrderRequest):
                     )
                 }
 
-            price = float(menu_item["price"])
 
-            quantity = requested_item.quantity
+            # ---------------------------------------------
+            # Price always comes from Supabase
+            # ---------------------------------------------
+
+            price = float(
+                menu_item["price"]
+            )
+
+            quantity = (
+                requested_item.quantity
+            )
+
 
             line_total = round(
                 price * quantity,
                 2
             )
 
+
             subtotal += line_total
 
+
+            # ---------------------------------------------
+            # Spice level is OPTIONAL
+            # ---------------------------------------------
+
+            spice_level = (
+                requested_item.spice_level.strip()
+                if requested_item.spice_level
+                else None
+            )
+
+
+            special_instructions = (
+                requested_item.special_instructions.strip()
+                if requested_item.special_instructions
+                else None
+            )
+
+
             validated_items.append({
-                "menu_item_id": menu_item["id"],
-                "item_name": menu_item["name"],
-                "quantity": quantity,
-                "unit_price": price,
-                "line_total": line_total,
+
+                "menu_item_id":
+                    menu_item["id"],
+
+                "item_name":
+                    menu_item["name"],
+
+                "category":
+                    menu_item.get("category"),
+
+                "quantity":
+                    quantity,
+
+                "unit_price":
+                    price,
+
+                "line_total":
+                    line_total,
+
+                "spice_level":
+                    spice_level,
+
                 "special_instructions":
-                    requested_item.special_instructions
+                    special_instructions
             })
 
 
-        subtotal = round(subtotal, 2)
+        subtotal = round(
+            subtotal,
+            2
+        )
 
-        # For MVP:
+
+        # -------------------------------------------------
+        # MVP TOTAL
+        # -------------------------------------------------
+        #
+        # For now:
+        #
         # total = subtotal
         #
-        # Later POS can calculate tax, discounts,
-        # service charges, etc.
+        # Later POS can calculate:
+        #
+        # tax
+        # discounts
+        # service charges
+        # modifiers
+        # etc.
+        # -------------------------------------------------
 
         total = subtotal
 
 
         # -------------------------------------------------
-        # 3. CREATE ORDER NUMBER
+        # 4. GENERATE ORDER NUMBER
         # -------------------------------------------------
 
-        order_number = generate_order_number()
+        order_number = (
+            generate_order_number()
+        )
 
 
         # -------------------------------------------------
-        # 4. INSERT ORDER
+        # 5. CREATE ORDER
         # -------------------------------------------------
 
         order_payload = {
-            "business_id": business["id"],
 
-            "order_number": order_number,
+            "business_id":
+                business["id"],
+
+            "order_number":
+                order_number,
 
             "customer_name":
                 request.customer_name.strip(),
@@ -261,7 +382,8 @@ def create_order(payload: RetellCreateOrderRequest):
             "customer_phone":
                 request.customer_phone,
 
-            "order_type": "pickup",
+            "order_type":
+                "pickup",
 
             "pickup_date":
                 request.pickup_date.isoformat(),
@@ -269,10 +391,14 @@ def create_order(payload: RetellCreateOrderRequest):
             "pickup_time":
                 request.pickup_time.isoformat(),
 
-            "status": "confirmed",
+            "status":
+                "confirmed",
 
-            "subtotal": subtotal,
-            "total": total,
+            "subtotal":
+                subtotal,
+
+            "total":
+                total,
 
             "allergy_notes":
                 request.allergy_notes,
@@ -285,32 +411,43 @@ def create_order(payload: RetellCreateOrderRequest):
         order_result = (
             supabase
             .table("orders")
-            .insert(order_payload)
+            .insert(
+                order_payload
+            )
             .execute()
         )
 
+
         if not order_result.data:
+
             raise Exception(
                 "Order could not be created."
             )
 
 
-        order = order_result.data[0]
+        order = (
+            order_result.data[0]
+        )
 
-        created_order_id = order["id"]
+
+        created_order_id = (
+            order["id"]
+        )
 
 
         # -------------------------------------------------
-        # 5. INSERT ORDER ITEMS
+        # 6. CREATE ORDER ITEMS
         # -------------------------------------------------
 
         order_item_rows = []
+
 
         for item in validated_items:
 
             order_item_rows.append({
 
-                "order_id": created_order_id,
+                "order_id":
+                    created_order_id,
 
                 "menu_item_id":
                     item["menu_item_id"],
@@ -327,6 +464,9 @@ def create_order(payload: RetellCreateOrderRequest):
                 "line_total":
                     item["line_total"],
 
+                "spice_level":
+                    item["spice_level"],
+
                 "special_instructions":
                     item["special_instructions"]
             })
@@ -335,24 +475,31 @@ def create_order(payload: RetellCreateOrderRequest):
         item_result = (
             supabase
             .table("order_items")
-            .insert(order_item_rows)
+            .insert(
+                order_item_rows
+            )
             .execute()
         )
 
+
         if not item_result.data:
+
             raise Exception(
                 "Order items could not be saved."
             )
 
 
         # -------------------------------------------------
-        # 6. SUCCESS RESPONSE FOR RETELL
+        # 7. SUCCESS RESPONSE FOR RETELL
         # -------------------------------------------------
 
         return {
-            "success": True,
 
-            "order_confirmed": True,
+            "success":
+                True,
+
+            "order_confirmed":
+                True,
 
             "business_id":
                 request.business_id,
@@ -369,11 +516,16 @@ def create_order(payload: RetellCreateOrderRequest):
             "customer_name":
                 request.customer_name,
 
+            "customer_phone":
+                request.customer_phone,
+
             "pickup_date":
                 request.pickup_date.isoformat(),
 
             "pickup_time":
-                request.pickup_time.strftime("%I:%M %p"),
+                request.pickup_time.strftime(
+                    "%I:%M %p"
+                ),
 
             "subtotal":
                 subtotal,
@@ -384,14 +536,26 @@ def create_order(payload: RetellCreateOrderRequest):
             "items":
                 validated_items,
 
+            "allergy_notes":
+                request.allergy_notes,
+
+            "order_notes":
+                request.order_notes,
+
             "message": (
                 f"Order {order_number} is confirmed "
-                f"for pickup under {request.customer_name} "
-                f"at {request.pickup_time.strftime('%I:%M %p')}. "
+                f"for pickup under "
+                f"{request.customer_name} "
+                f"at "
+                f"{request.pickup_time.strftime('%I:%M %p')}. "
                 f"The total is ${total:.2f}."
             )
         }
 
+
+    # -----------------------------------------------------
+    # ERROR HANDLING
+    # -----------------------------------------------------
 
     except Exception as e:
 
@@ -402,7 +566,11 @@ def create_order(payload: RetellCreateOrderRequest):
 
 
         # -------------------------------------------------
-        # BEST-EFFORT CLEANUP
+        # CLEAN UP PARTIAL ORDER
+        # -------------------------------------------------
+        #
+        # If the order was created but inserting
+        # order_items failed, remove the incomplete order.
         # -------------------------------------------------
 
         if created_order_id:
@@ -418,6 +586,7 @@ def create_order(payload: RetellCreateOrderRequest):
                     ) \
                     .execute()
 
+
             except Exception as cleanup_error:
 
                 print(
@@ -427,9 +596,15 @@ def create_order(payload: RetellCreateOrderRequest):
 
 
         return {
-            "success": False,
-            "order_confirmed": False,
-            "message": str(e)
+
+            "success":
+                False,
+
+            "order_confirmed":
+                False,
+
+            "message":
+                str(e)
         }
 
 
@@ -437,7 +612,9 @@ def create_order(payload: RetellCreateOrderRequest):
 # GET ORDER
 # ---------------------------------------------------------
 
-@router.get("/{business_id}/{order_number}")
+@router.get(
+    "/{business_id}/{order_number}"
+)
 def get_order(
     business_id: str,
     order_number: str
@@ -445,9 +622,18 @@ def get_order(
 
     try:
 
+        # -------------------------------------------------
+        # BUSINESS
+        # -------------------------------------------------
+
         business = get_business(
             business_id
         )
+
+
+        # -------------------------------------------------
+        # ORDER
+        # -------------------------------------------------
 
         result = (
             supabase
@@ -465,13 +651,22 @@ def get_order(
             .execute()
         )
 
-        orders = result.data or []
+
+        orders = (
+            result.data or []
+        )
+
 
         if not orders:
 
             return {
-                "success": True,
-                "found": False,
+
+                "success":
+                    True,
+
+                "found":
+                    False,
+
                 "message":
                     "Order not found."
             }
@@ -479,6 +674,10 @@ def get_order(
 
         order = orders[0]
 
+
+        # -------------------------------------------------
+        # ORDER ITEMS
+        # -------------------------------------------------
 
         items_result = (
             supabase
@@ -493,9 +692,16 @@ def get_order(
 
 
         return {
-            "success": True,
-            "found": True,
-            "order": order,
+
+            "success":
+                True,
+
+            "found":
+                True,
+
+            "order":
+                order,
+
             "items":
                 items_result.data or []
         }
@@ -504,23 +710,33 @@ def get_order(
     except Exception as e:
 
         return {
-            "success": False,
-            "found": False,
-            "message": str(e)
+
+            "success":
+                False,
+
+            "found":
+                False,
+
+            "message":
+                str(e)
         }
 
 
 # ---------------------------------------------------------
-# HEALTH
+# HEALTH CHECK
 # ---------------------------------------------------------
 
 @router.get("/health/check")
 def orders_health():
 
     return {
-        "success": True,
+
+        "success":
+            True,
+
         "module":
             "restaurant-orders",
+
         "status":
             "running"
     }
