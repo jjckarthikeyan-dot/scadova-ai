@@ -2,7 +2,6 @@ import os
 import uuid
 from pathlib import Path
 from datetime import date, time
-from typing import Any
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
@@ -48,16 +47,17 @@ router = APIRouter()
 
 class OrderItemRequest(BaseModel):
     item_name: str
-    quantity: int = Field(default=1, ge=1, le=50)
 
-    # Optional because spice level does not apply
-    # to every menu item.
-    spice_level: str | None = None
+    quantity: int = Field(
+        default=1,
+        ge=1,
+        le=50
+    )
 
     special_instructions: str | None = None
 
 
-class CreateOrderArgs(BaseModel):
+class CreateOrderRequest(BaseModel):
     business_id: str
 
     customer_name: str
@@ -70,20 +70,6 @@ class CreateOrderArgs(BaseModel):
 
     allergy_notes: str | None = None
     order_notes: str | None = None
-
-
-# Retell sends:
-#
-# {
-#   "name": "create_order",
-#   "call": {...},
-#   "args": {...}
-# }
-
-class RetellCreateOrderRequest(BaseModel):
-    name: str | None = None
-    call: dict[str, Any] | None = None
-    args: CreateOrderArgs
 
 
 # ---------------------------------------------------------
@@ -103,8 +89,14 @@ def get_business(business_id: str):
             "timezone,"
             "active"
         )
-        .eq("business_key", business_id)
-        .eq("active", True)
+        .eq(
+            "business_key",
+            business_id
+        )
+        .eq(
+            "active",
+            True
+        )
         .limit(1)
         .execute()
     )
@@ -112,6 +104,7 @@ def get_business(business_id: str):
     businesses = result.data or []
 
     if not businesses:
+
         raise Exception(
             f"Business '{business_id}' was not found or is inactive."
         )
@@ -119,6 +112,7 @@ def get_business(business_id: str):
     business = businesses[0]
 
     if business.get("business_type") != "restaurant":
+
         raise Exception(
             f"Business '{business_id}' is not a restaurant."
         )
@@ -137,12 +131,9 @@ def find_menu_item(
     business_db_id: int,
     item_name: str
 ):
-
     """
-    Find an available menu item using the live menu database.
+    Finds an available live menu item for the business.
     """
-
-    clean_name = item_name.strip()
 
     result = (
         supabase
@@ -165,7 +156,7 @@ def find_menu_item(
         )
         .ilike(
             "name",
-            clean_name
+            item_name.strip()
         )
         .limit(1)
         .execute()
@@ -185,7 +176,7 @@ def find_menu_item(
 
 @router.post("/create")
 def create_order(
-    payload: RetellCreateOrderRequest
+    request: CreateOrderRequest
 ):
 
     created_order_id = None
@@ -193,24 +184,12 @@ def create_order(
     try:
 
         # -------------------------------------------------
-        # 0. GET FUNCTION ARGUMENTS FROM RETELL
-        # -------------------------------------------------
-
-        request = payload.args
-
-
-        # -------------------------------------------------
-        # 1. VALIDATE BUSINESS
+        # 1. BUSINESS
         # -------------------------------------------------
 
         business = get_business(
             request.business_id
         )
-
-
-        # -------------------------------------------------
-        # 2. VALIDATE ORDER
-        # -------------------------------------------------
 
         if not request.items:
 
@@ -222,18 +201,8 @@ def create_order(
             }
 
 
-        if not request.customer_name.strip():
-
-            return {
-                "success": False,
-                "order_confirmed": False,
-                "message":
-                    "Customer name is required."
-            }
-
-
         # -------------------------------------------------
-        # 3. VALIDATE LIVE MENU ITEMS
+        # 2. VALIDATE MENU ITEMS
         # -------------------------------------------------
 
         validated_items = []
@@ -261,9 +230,17 @@ def create_order(
                 }
 
 
-            # ---------------------------------------------
-            # Price always comes from Supabase
-            # ---------------------------------------------
+            if menu_item.get("price") is None:
+
+                return {
+                    "success": False,
+                    "order_confirmed": False,
+                    "message": (
+                        f"Price is not available for "
+                        f"{menu_item['name']}."
+                    )
+                }
+
 
             price = float(
                 menu_item["price"]
@@ -283,24 +260,6 @@ def create_order(
             subtotal += line_total
 
 
-            # ---------------------------------------------
-            # Spice level is OPTIONAL
-            # ---------------------------------------------
-
-            spice_level = (
-                requested_item.spice_level.strip()
-                if requested_item.spice_level
-                else None
-            )
-
-
-            special_instructions = (
-                requested_item.special_instructions.strip()
-                if requested_item.special_instructions
-                else None
-            )
-
-
             validated_items.append({
 
                 "menu_item_id":
@@ -308,9 +267,6 @@ def create_order(
 
                 "item_name":
                     menu_item["name"],
-
-                "category":
-                    menu_item.get("category"),
 
                 "quantity":
                     quantity,
@@ -321,11 +277,8 @@ def create_order(
                 "line_total":
                     line_total,
 
-                "spice_level":
-                    spice_level,
-
                 "special_instructions":
-                    special_instructions
+                    requested_item.special_instructions
             })
 
 
@@ -336,27 +289,22 @@ def create_order(
 
 
         # -------------------------------------------------
-        # MVP TOTAL
+        # TAX
         # -------------------------------------------------
+
+        # Tax is NOT calculated yet.
         #
-        # For now:
-        #
+        # For the MVP:
         # total = subtotal
         #
-        # Later POS can calculate:
-        #
-        # tax
-        # discounts
-        # service charges
-        # modifiers
-        # etc.
-        # -------------------------------------------------
+        # Later we can calculate:
+        # subtotal + tax = final total
 
         total = subtotal
 
 
         # -------------------------------------------------
-        # 4. GENERATE ORDER NUMBER
+        # 3. CREATE ORDER NUMBER
         # -------------------------------------------------
 
         order_number = (
@@ -365,7 +313,7 @@ def create_order(
 
 
         # -------------------------------------------------
-        # 5. CREATE ORDER
+        # 4. INSERT ORDER
         # -------------------------------------------------
 
         order_payload = {
@@ -436,7 +384,7 @@ def create_order(
 
 
         # -------------------------------------------------
-        # 6. CREATE ORDER ITEMS
+        # 5. INSERT ORDER ITEMS
         # -------------------------------------------------
 
         order_item_rows = []
@@ -464,9 +412,6 @@ def create_order(
                 "line_total":
                     item["line_total"],
 
-                "spice_level":
-                    item["spice_level"],
-
                 "special_instructions":
                     item["special_instructions"]
             })
@@ -490,7 +435,7 @@ def create_order(
 
 
         # -------------------------------------------------
-        # 7. SUCCESS RESPONSE FOR RETELL
+        # 6. SUCCESS RESPONSE
         # -------------------------------------------------
 
         return {
@@ -516,9 +461,6 @@ def create_order(
             "customer_name":
                 request.customer_name,
 
-            "customer_phone":
-                request.customer_phone,
-
             "pickup_date":
                 request.pickup_date.isoformat(),
 
@@ -533,14 +475,11 @@ def create_order(
             "total":
                 total,
 
+            "tax_included":
+                False,
+
             "items":
                 validated_items,
-
-            "allergy_notes":
-                request.allergy_notes,
-
-            "order_notes":
-                request.order_notes,
 
             "message": (
                 f"Order {order_number} is confirmed "
@@ -548,14 +487,11 @@ def create_order(
                 f"{request.customer_name} "
                 f"at "
                 f"{request.pickup_time.strftime('%I:%M %p')}. "
-                f"The total is ${total:.2f}."
+                f"The food total before tax is "
+                f"${total:.2f}."
             )
         }
 
-
-    # -----------------------------------------------------
-    # ERROR HANDLING
-    # -----------------------------------------------------
 
     except Exception as e:
 
@@ -566,11 +502,7 @@ def create_order(
 
 
         # -------------------------------------------------
-        # CLEAN UP PARTIAL ORDER
-        # -------------------------------------------------
-        #
-        # If the order was created but inserting
-        # order_items failed, remove the incomplete order.
+        # BEST-EFFORT CLEANUP
         # -------------------------------------------------
 
         if created_order_id:
@@ -622,18 +554,10 @@ def get_order(
 
     try:
 
-        # -------------------------------------------------
-        # BUSINESS
-        # -------------------------------------------------
-
         business = get_business(
             business_id
         )
 
-
-        # -------------------------------------------------
-        # ORDER
-        # -------------------------------------------------
 
         result = (
             supabase
@@ -672,12 +596,10 @@ def get_order(
             }
 
 
-        order = orders[0]
+        order = (
+            orders[0]
+        )
 
-
-        # -------------------------------------------------
-        # ORDER ITEMS
-        # -------------------------------------------------
 
         items_result = (
             supabase
