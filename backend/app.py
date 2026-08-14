@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 
-from restaurant.router import router as restaurant_router
-from clinic.router import router as clinic_router
+from backend.restaurant.router import router as restaurant_router
+from backend.clinic.router import router as clinic_router
 
 app = FastAPI(
     title="Scadova AI Backend",

@@ -1,13 +1,11 @@
 from fastapi import APIRouter
 
-from restaurant.menu import router as menu_router
-from restaurant.orders import router as orders_router
-from restaurant.reservations import router as reservations_router
-from restaurant.catering import router as catering_router
-
+from backend.restaurant.menu import router as menu_router
+from backend.restaurant.orders import router as orders_router
+from backend.restaurant.reservations import router as reservations_router
+from backend.restaurant.catering import router as catering_router
 
 router = APIRouter()
-
 
 router.include_router(
     menu_router,
