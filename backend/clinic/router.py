@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 
-from backend.clinic.appointments import router as appointments_router
-from backend.clinic.providers import router as providers_router
+from .appointments import router as appointments_router
+from .providers import router as providers_router
 
 router = APIRouter()
 

@@ -2,6 +2,7 @@ from fastapi import FastAPI
 
 from backend.restaurant.router import router as restaurant_router
 from backend.clinic.router import router as clinic_router
+from backend.loan.router import router as loan_router
 
 app = FastAPI(
     title="Scadova AI Backend",
@@ -16,6 +17,10 @@ app.include_router(
 app.include_router(
     clinic_router,
     prefix="/api/clinic"
+)
+
+app.include_router(
+    loan_router
 )
 
 
