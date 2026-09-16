@@ -1,14 +1,37 @@
+import os
+import sys
+from pathlib import Path
 from fastapi import FastAPI
+
+# Ensure both repository root and backend directory are in sys.path
+backend_dir = Path(__file__).resolve().parent
+workspace_dir = backend_dir.parent
+if str(workspace_dir) not in sys.path:
+    sys.path.insert(0, str(workspace_dir))
+if str(backend_dir) not in sys.path:
+    sys.path.insert(0, str(backend_dir))
 
 from restaurant.router import router as restaurant_router
 from clinic.router import router as clinic_router
-from loan.router import router as loan_router
+from backend.loan_agency.router import router as loan_agency_router
+from backend.loan_agency.sarvam_router import router as sarvam_router
+
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(
     title="Scadova AI Backend",
     version="1.0.0"
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Department routers
 app.include_router(
     restaurant_router,
     prefix="/api/restaurant",
@@ -21,11 +44,9 @@ app.include_router(
     tags=["Clinic"]
 )
 
-app.include_router(
-    loan_router,
-    # prefix is already defined in loan/router.py as /api/loan-agency
-    tags=["Loan"]
-)
+# Loan Agency & Sarvam routers
+app.include_router(loan_agency_router)
+app.include_router(sarvam_router)
 
 
 @app.get("/")

@@ -2,6 +2,12 @@ import os
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
+from pathlib import Path
+
+# Load .env from current directory or backend directory
+env_path = Path(__file__).resolve().parent.parent / ".env"
+if env_path.exists():
+    load_dotenv(dotenv_path=env_path)
 load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
