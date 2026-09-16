@@ -167,7 +167,7 @@ async def create_loan_application(payload: LoanApplicationCreate):
 
 
 @router.get("/applications/{application_id}")
-async def get_loan_application(application_id: str):
+async def get_loan_application(application_id: int):
     """
     Retrieve application details by application ID.
     """
@@ -207,7 +207,7 @@ async def get_loan_application(application_id: str):
     response_model=PersonalLoanProfileResponse
 )
 async def update_personal_loan_profile(
-    application_id: str,
+    application_id: int,
     payload: PersonalLoanProfileUpdate
 ):
     """
@@ -247,7 +247,7 @@ async def update_personal_loan_profile(
     "/personal-loans/{application_id}",
     response_model=PersonalLoanProfileResponse
 )
-async def get_personal_loan_profile(application_id: str):
+async def get_personal_loan_profile(application_id: int):
     """
     Retrieve personal loan profile details for an application.
     """

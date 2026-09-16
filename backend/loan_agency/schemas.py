@@ -115,8 +115,8 @@ class PersonalLoanProfileUpdate(BaseModel):
 
 
 class PersonalLoanProfileResponse(PersonalLoanProfileUpdate):
-    id: Optional[str] = None
-    application_id: str
+    id: Optional[int] = None
+    application_id: int
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 
