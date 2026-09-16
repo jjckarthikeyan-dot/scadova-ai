@@ -74,59 +74,22 @@ BUSINESS_LOAN_COLUMNS = {
     response_model=LoanApplicationResponse,
     status_code=status.HTTP_201_CREATED
 )
-async def create_loan_application(payload: LoanApplicationCreate):
+async def create_loan_application(request: LoanApplicationCreate):
     """
     Create a new loan application for Personal, Used Car, or Business Loan.
     """
     try:
-        raw_data = payload.model_dump(exclude_none=True)
-
-        full_name = raw_data.get("full_name") or raw_data.get("applicant_name") or "Applicant"
-        mobile = raw_data.get("mobile_number") or raw_data.get("phone_number") or ""
-        loan_type_val = raw_data.get("loan_type") or raw_data.get("product_type") or "personal_loan"
-        product_type_val = loan_type_val.upper()
-
-        app_number = f"APP-{uuid.uuid4().hex[:8].upper()}"
-
-        # Prepare database row supporting both existing and migration columns
-        insert_payload = {
-            "applicant_name": full_name,
-            "phone_number": mobile,
-            "product_type": product_type_val,
-            "status": "DRAFT"
+        payload = {
+            "loan_type": request.loan_type,
+            "full_name": request.full_name,
+            "mobile_number": request.mobile_number,
+            "age": request.age,
+            "city": request.city,
+            "preferred_language": request.preferred_language,
+            "source": request.source,
         }
 
-        if "age" in raw_data:
-            insert_payload["age"] = raw_data["age"]
-        if "city" in raw_data:
-            insert_payload["city"] = raw_data["city"]
-        if "email" in raw_data:
-            insert_payload["email"] = raw_data["email"]
-        if "pan_number" in raw_data:
-            insert_payload["pan_number"] = raw_data["pan_number"]
-        if "aadhaar_number" in raw_data:
-            insert_payload["aadhaar_number"] = raw_data["aadhaar_number"]
-
-        # Try inserting with all fields first
-        extended_payload = {
-            **insert_payload,
-            "application_number": app_number,
-            "full_name": full_name,
-            "mobile_number": mobile,
-            "loan_type": loan_type_val,
-            "preferred_language": raw_data.get("preferred_language", "English"),
-            "requested_amount": raw_data.get("requested_amount"),
-            "preferred_tenure_months": raw_data.get("preferred_tenure_months"),
-            "loan_purpose": raw_data.get("loan_purpose"),
-            "lead_id": raw_data.get("lead_id")
-        }
-        extended_payload = {k: v for k, v in extended_payload.items() if v is not None}
-
-        try:
-            response = supabase.table("loan_applications").insert(extended_payload).execute()
-        except Exception as insert_err:
-            logger.warning(f"Extended insert failed, falling back to base columns: {insert_err}")
-            response = supabase.table("loan_applications").insert(insert_payload).execute()
+        response = supabase.table("loan_applications").insert(payload).execute()
 
         if not response.data:
             raise HTTPException(
@@ -134,27 +97,7 @@ async def create_loan_application(payload: LoanApplicationCreate):
                 detail="Supabase returned no data on application creation"
             )
 
-        saved = response.data[0]
-        return LoanApplicationResponse(
-            id=saved.get("id"),
-            application_number=saved.get("application_number") or app_number,
-            lead_id=saved.get("lead_id"),
-            loan_type=saved.get("loan_type") or loan_type_val,
-            full_name=saved.get("full_name") or saved.get("applicant_name") or full_name,
-            mobile_number=saved.get("mobile_number") or saved.get("phone_number") or mobile,
-            age=saved.get("age"),
-            city=saved.get("city"),
-            preferred_language=saved.get("preferred_language") or raw_data.get("preferred_language", "English"),
-            email=saved.get("email"),
-            pan_number=saved.get("pan_number"),
-            aadhaar_number=saved.get("aadhaar_number"),
-            requested_amount=saved.get("requested_amount"),
-            preferred_tenure_months=saved.get("preferred_tenure_months"),
-            loan_purpose=saved.get("loan_purpose"),
-            status=saved.get("status", "DRAFT"),
-            created_at=saved.get("created_at"),
-            updated_at=saved.get("updated_at")
-        )
+        return response.data[0]
 
     except HTTPException:
         raise

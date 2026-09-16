@@ -22,6 +22,7 @@ class LoanApplicationCreate(BaseModel):
     age: Optional[int] = Field(default=None, ge=18, le=100)
     city: Optional[str] = Field(default=None, max_length=100)
     preferred_language: Optional[str] = Field(default="English")
+    source: Optional[str] = Field(default="voice_agent", description="Lead source")
 
     # Optional fields
     email: Optional[str] = None
@@ -30,26 +31,20 @@ class LoanApplicationCreate(BaseModel):
     requested_amount: Optional[float] = None
     preferred_tenure_months: Optional[int] = None
     loan_purpose: Optional[str] = None
-    lead_id: Optional[str] = None
-
-    # Backward compatibility aliases
-    applicant_name: Optional[str] = None
-    phone_number: Optional[str] = None
-    product_type: Optional[str] = None
 
 
 class LoanApplicationResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    id: str
+    id: Any
     application_number: Optional[str] = None
-    lead_id: Optional[str] = None
     loan_type: Optional[str] = None
     full_name: Optional[str] = None
     mobile_number: Optional[str] = None
     age: Optional[int] = None
     city: Optional[str] = None
     preferred_language: Optional[str] = None
+    source: Optional[str] = None
     email: Optional[str] = None
     pan_number: Optional[str] = None
     aadhaar_number: Optional[str] = None
