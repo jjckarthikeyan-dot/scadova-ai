@@ -30,6 +30,19 @@ import {
 import { apiFetch } from '../api';
 
 // ============================================================
+// DEFAULT OPERATING HOURS TEMPLATE
+// ============================================================
+const DEFAULT_WEEK_HOURS = [
+  { day: 'Monday', open_time: '09:00', close_time: '17:00', closed: false },
+  { day: 'Tuesday', open_time: '09:00', close_time: '17:00', closed: false },
+  { day: 'Wednesday', open_time: '09:00', close_time: '17:00', closed: false },
+  { day: 'Thursday', open_time: '09:00', close_time: '17:00', closed: false },
+  { day: 'Friday', open_time: '09:00', close_time: '17:00', closed: false },
+  { day: 'Saturday', open_time: '10:00', close_time: '15:00', closed: false },
+  { day: 'Sunday', open_time: '10:00', close_time: '14:00', closed: true },
+];
+
+// ============================================================
 // INDUSTRY SYSTEM PROMPTS & GREETING TEMPLATES (DEFAULTS)
 // ============================================================
 const DEFAULT_TEMPLATES = {
@@ -1007,6 +1020,121 @@ export default function BusinessesPage({ onOpenOnboarding }) {
     auto_create_agent: true
   });
 
+  // Services and Operating Hours state for Add Business modal
+  const [newBizHours, setNewBizHours] = useState(DEFAULT_WEEK_HOURS);
+  const [newBizNoHours, setNewBizNoHours] = useState(false);
+  const [newBizServices, setNewBizServices] = useState([
+    {
+      id: 1,
+      service_name: 'Consultation & Assessment',
+      showPrice: true,
+      price: '49',
+      showDuration: true,
+      duration_minutes: '30',
+      showDescription: true,
+      short_description: 'Initial intake and requirement consultation session.',
+    }
+  ]);
+  const [newBizNoServices, setNewBizNoServices] = useState(false);
+
+  // Services and Operating Hours state for Edit Business modal
+  const [editBizHours, setEditBizHours] = useState(DEFAULT_WEEK_HOURS);
+  const [editBizNoHours, setEditBizNoHours] = useState(false);
+  const [editBizServices, setEditBizServices] = useState([]);
+  const [editBizNoServices, setEditBizNoServices] = useState(false);
+
+  // Hours update handlers
+  const handleUpdateHour = (isEdit, dayName, field, value) => {
+    const setter = isEdit ? setEditBizHours : setNewBizHours;
+    setter((prev) =>
+      prev.map((h) => (h.day === dayName ? { ...h, [field]: value } : h))
+    );
+  };
+
+  const handleApplyPresetHours = (isEdit, presetType) => {
+    const setter = isEdit ? setEditBizHours : setNewBizHours;
+    if (presetType === 'weekdays') {
+      setter([
+        { day: 'Monday', open_time: '09:00', close_time: '17:00', closed: false },
+        { day: 'Tuesday', open_time: '09:00', close_time: '17:00', closed: false },
+        { day: 'Wednesday', open_time: '09:00', close_time: '17:00', closed: false },
+        { day: 'Thursday', open_time: '09:00', close_time: '17:00', closed: false },
+        { day: 'Friday', open_time: '09:00', close_time: '17:00', closed: false },
+        { day: 'Saturday', open_time: '09:00', close_time: '17:00', closed: true },
+        { day: 'Sunday', open_time: '09:00', close_time: '17:00', closed: true },
+      ]);
+    } else if (presetType === 'alldays') {
+      setter([
+        { day: 'Monday', open_time: '09:00', close_time: '18:00', closed: false },
+        { day: 'Tuesday', open_time: '09:00', close_time: '18:00', closed: false },
+        { day: 'Wednesday', open_time: '09:00', close_time: '18:00', closed: false },
+        { day: 'Thursday', open_time: '09:00', close_time: '18:00', closed: false },
+        { day: 'Friday', open_time: '09:00', close_time: '18:00', closed: false },
+        { day: 'Saturday', open_time: '09:00', close_time: '18:00', closed: false },
+        { day: 'Sunday', open_time: '09:00', close_time: '18:00', closed: false },
+      ]);
+    } else if (presetType === 'saturday') {
+      setter([
+        { day: 'Monday', open_time: '09:00', close_time: '17:00', closed: false },
+        { day: 'Tuesday', open_time: '09:00', close_time: '17:00', closed: false },
+        { day: 'Wednesday', open_time: '09:00', close_time: '17:00', closed: false },
+        { day: 'Thursday', open_time: '09:00', close_time: '17:00', closed: false },
+        { day: 'Friday', open_time: '09:00', close_time: '17:00', closed: false },
+        { day: 'Saturday', open_time: '10:00', close_time: '15:00', closed: false },
+        { day: 'Sunday', open_time: '10:00', close_time: '15:00', closed: true },
+      ]);
+    }
+  };
+
+  // Services update handlers
+  const handleAddServiceItem = (isEdit) => {
+    const setter = isEdit ? setEditBizServices : setNewBizServices;
+    setter((prev) => [
+      ...prev,
+      {
+        id: Date.now() + Math.random(),
+        service_name: '',
+        showPrice: false,
+        price: '',
+        showDuration: false,
+        duration_minutes: '',
+        showDescription: false,
+        short_description: '',
+      }
+    ]);
+  };
+
+  const handleUpdateServiceItem = (isEdit, id, field, value) => {
+    const setter = isEdit ? setEditBizServices : setNewBizServices;
+    setter((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, [field]: value } : s))
+    );
+  };
+
+  const handleRemoveServiceItem = (isEdit, id) => {
+    const setter = isEdit ? setEditBizServices : setNewBizServices;
+    setter((prev) => prev.filter((s) => s.id !== id));
+  };
+
+  const handleToggleServiceField = (isEdit, id, fieldName, enable) => {
+    const setter = isEdit ? setEditBizServices : setNewBizServices;
+    setter((prev) =>
+      prev.map((s) => {
+        if (s.id !== id) return s;
+        if (fieldName === 'price') {
+          return { ...s, showPrice: enable, price: enable ? s.price || '' : '' };
+        }
+        if (fieldName === 'duration') {
+          return { ...s, showDuration: enable, duration_minutes: enable ? s.duration_minutes || '' : '' };
+        }
+        if (fieldName === 'description') {
+          return { ...s, showDescription: enable, short_description: enable ? s.short_description || '' : '' };
+        }
+        return s;
+      })
+    );
+  };
+
   const loadBusinesses = () => {
     setLoading(true);
     apiFetch('/admin/businesses')
@@ -1064,6 +1192,21 @@ export default function BusinessesPage({ onOpenOnboarding }) {
       attached_tools: [...(defaultTemplate.tools || [])],
       auto_create_agent: true
     });
+    setNewBizHours(DEFAULT_WEEK_HOURS);
+    setNewBizNoHours(false);
+    setNewBizServices([
+      {
+        id: 1,
+        service_name: 'Consultation & Assessment',
+        showPrice: true,
+        price: '49',
+        showDuration: true,
+        duration_minutes: '30',
+        showDescription: true,
+        short_description: 'Initial intake and requirement consultation session.',
+      }
+    ]);
+    setNewBizNoServices(false);
     setAddTab('business');
     setCreateError('');
     setAddModalOpen(true);
@@ -1242,6 +1385,30 @@ export default function BusinessesPage({ onOpenOnboarding }) {
         auto_create_agent: isAgentNow,
       };
 
+      if (!newBizNoHours && newBizHours && newBizHours.length > 0) {
+        payload.hours_data = newBizHours.map((h) => ({
+          day: h.day,
+          open_time: h.closed ? null : h.open_time,
+          close_time: h.closed ? null : h.close_time,
+          closed: Boolean(h.closed),
+        }));
+      } else {
+        payload.hours_data = [];
+      }
+
+      if (!newBizNoServices && newBizServices && newBizServices.length > 0) {
+        payload.services_data = newBizServices
+          .filter((s) => s.service_name && s.service_name.trim())
+          .map((s) => ({
+            service_name: s.service_name.trim(),
+            price: s.showPrice && s.price ? parseFloat(s.price) : null,
+            duration_minutes: s.showDuration && s.duration_minutes ? parseInt(s.duration_minutes, 10) : null,
+            short_description: s.showDescription ? (s.short_description || '').trim() : '',
+          }));
+      } else {
+        payload.services_data = [];
+      }
+
       if (isAgentNow) {
         payload.agent_name = newBiz.agent_name?.trim() || `${newBiz.name.trim()} AI Assistant`;
         payload.voice_id = newBiz.voice_id;
@@ -1298,6 +1465,57 @@ export default function BusinessesPage({ onOpenOnboarding }) {
     });
     setEditTab(initialTab);
     setSaveError('');
+
+    // Fetch live hours & services
+    apiFetch(`/admin/businesses/${biz.id}`)
+      .then((fullBiz) => {
+        if (fullBiz?.hours && fullBiz.hours.length > 0) {
+          const daysMap = {};
+          fullBiz.hours.forEach((h) => {
+            const d = (h.day || '').charAt(0).toUpperCase() + (h.day || '').slice(1).toLowerCase();
+            daysMap[d] = h;
+          });
+          const mappedHours = DEFAULT_WEEK_HOURS.map((def) => {
+            const match = daysMap[def.day];
+            if (match) {
+              return {
+                day: def.day,
+                open_time: match.open_time || def.open_time,
+                close_time: match.close_time || def.close_time,
+                closed: Boolean(match.closed),
+              };
+            }
+            return def;
+          });
+          setEditBizHours(mappedHours);
+          setEditBizNoHours(false);
+        } else {
+          setEditBizHours(DEFAULT_WEEK_HOURS);
+          setEditBizNoHours(false);
+        }
+
+        if (fullBiz?.services && fullBiz.services.length > 0) {
+          const mappedServices = fullBiz.services.map((s, idx) => ({
+            id: s.id || idx + 1,
+            service_name: s.service_name || s.name || '',
+            showPrice: Boolean(s.price !== null && s.price !== undefined && s.price !== ''),
+            price: s.price != null ? String(s.price) : '',
+            showDuration: Boolean(s.duration_minutes !== null && s.duration_minutes !== undefined && s.duration_minutes !== ''),
+            duration_minutes: s.duration_minutes != null ? String(s.duration_minutes) : '',
+            showDescription: Boolean(s.short_description || s.detailed_description || s.description),
+            short_description: s.short_description || s.detailed_description || s.description || '',
+          }));
+          setEditBizServices(mappedServices);
+          setEditBizNoServices(false);
+        } else {
+          setEditBizServices([]);
+          setEditBizNoServices(false);
+        }
+      })
+      .catch(() => {
+        setEditBizHours(DEFAULT_WEEK_HOURS);
+        setEditBizServices([]);
+      });
   };
 
   const handleSaveEdit = async (e) => {
@@ -1332,6 +1550,30 @@ export default function BusinessesPage({ onOpenOnboarding }) {
         system_prompt: editingBiz.system_prompt?.trim(),
         attached_tools: editingBiz.attached_tools || [],
       };
+
+      if (!editBizNoHours && editBizHours && editBizHours.length > 0) {
+        payload.hours_data = editBizHours.map((h) => ({
+          day: h.day,
+          open_time: h.closed ? null : h.open_time,
+          close_time: h.closed ? null : h.close_time,
+          closed: Boolean(h.closed),
+        }));
+      } else if (editBizNoHours) {
+        payload.hours_data = [];
+      }
+
+      if (!editBizNoServices && editBizServices && editBizServices.length > 0) {
+        payload.services_data = editBizServices
+          .filter((s) => s.service_name && s.service_name.trim())
+          .map((s) => ({
+            service_name: s.service_name.trim(),
+            price: s.showPrice && s.price ? parseFloat(s.price) : null,
+            duration_minutes: s.showDuration && s.duration_minutes ? parseInt(s.duration_minutes, 10) : null,
+            short_description: s.showDescription ? (s.short_description || '').trim() : '',
+          }));
+      } else if (editBizNoServices) {
+        payload.services_data = [];
+      }
 
       const updated = await apiFetch(`/admin/businesses/${editingBiz.id}`, {
         method: 'PUT',
@@ -2053,7 +2295,23 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                 onClick={() => setAddTab('business')}
               >
                 <Building2 size={15} />
-                <span>1. Business Details</span>
+                <span>1. Business & About</span>
+              </button>
+              <button
+                type="button"
+                className={`edit-tab-btn ${addTab === 'hours' ? 'active' : ''}`}
+                onClick={() => setAddTab('hours')}
+              >
+                <Clock size={15} />
+                <span>2. Operating Hours</span>
+              </button>
+              <button
+                type="button"
+                className={`edit-tab-btn ${addTab === 'services' ? 'active' : ''}`}
+                onClick={() => setAddTab('services')}
+              >
+                <FileText size={15} />
+                <span>3. Services & Catalogue</span>
               </button>
               <button
                 type="button"
@@ -2061,7 +2319,7 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                 onClick={() => setAddTab('agent')}
               >
                 <Bot size={15} />
-                <span>2. AI Voice Agent & Fish Audio Prompt</span>
+                <span>4. AI Voice Agent & Fish Audio Prompt</span>
               </button>
             </div>
 
@@ -2073,7 +2331,7 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                   </div>
                 )}
 
-                {/* TAB 1: BUSINESS DETAILS */}
+                {/* TAB 1: BUSINESS IDENTITY & ABOUT */}
                 {addTab === 'business' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
                     <div className="edit-section-card">
@@ -2124,7 +2382,7 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                       <div className="edit-section-header">
                         <h4>
                           <Globe size={16} color="#2563eb" />
-                          Contact, Location & Hours
+                          Contact, Location & Coordinates
                         </h4>
                         <span className="badge badge-gray">Operational</span>
                       </div>
@@ -2181,26 +2439,54 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                         </div>
                       </div>
 
-                      <div className="edit-field-group">
-                        <label>Website URL</label>
-                        <input
-                          type="text"
-                          className="form-input"
-                          placeholder="https://example.com"
-                          value={newBiz.website}
-                          onChange={(e) => setNewBiz({ ...newBiz, website: e.target.value })}
-                        />
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                        <div className="edit-field-group">
+                          <label>Website URL</label>
+                          <input
+                            type="text"
+                            className="form-input"
+                            placeholder="https://example.com"
+                            value={newBiz.website}
+                            onChange={(e) => setNewBiz({ ...newBiz, website: e.target.value })}
+                          />
+                        </div>
+
+                        <div className="edit-field-group">
+                          <label>Physical Address / Location</label>
+                          <input
+                            type="text"
+                            className="form-input"
+                            placeholder="123 Market Street, Suite 200..."
+                            value={newBiz.address}
+                            onChange={(e) => setNewBiz({ ...newBiz, address: e.target.value })}
+                          />
+                        </div>
                       </div>
+                    </div>
+
+                    {/* DEDICATED ABOUT THE BUSINESS / AI KNOWLEDGE BASE */}
+                    <div className="edit-section-card">
+                      <div className="edit-section-header">
+                        <h4>
+                          <FileText size={16} color="#2563eb" />
+                          About the Business (AI Knowledge Base & FAQs)
+                        </h4>
+                        <span className="badge badge-blue">Ground Truth Context</span>
+                      </div>
+                      <p style={{ fontSize: 12.5, color: '#475569', margin: '4px 0 10px 0', lineHeight: 1.4 }}>
+                        Provide comprehensive background information, caller policies, FAQs, parking guidance, and general business details. The AI voice agent and tools rely on this verified knowledge base.
+                      </p>
 
                       <div className="edit-field-group">
-                        <label>Physical Address / Description</label>
                         <textarea
-                          rows={2}
+                          rows={4}
                           className="form-textarea"
-                          placeholder="Brief description or address for caller queries..."
+                          placeholder="e.g. Scadova Care Clinic has provided family healthcare, dental checkups, and wellness consultations for over 15 years. Walk-ins are accepted between 9am-11am. We require 24 hours notice for appointment rescheduling. Free customer parking is available behind the building."
                           value={newBiz.description}
                           onChange={(e) => setNewBiz({ ...newBiz, description: e.target.value })}
+                          style={{ fontSize: 13, lineHeight: 1.5 }}
                         />
+                        <small>Directly ingested into the AI voice agent prompt and Fish Audio runtime knowledge base.</small>
                       </div>
                     </div>
 
@@ -2259,7 +2545,344 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                   </div>
                 )}
 
-                {/* TAB 2: AI VOICE AGENT & FISH AUDIO PROMPT */}
+                {/* TAB 2: OPERATING HOURS */}
+                {addTab === 'hours' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+                    <div className="edit-section-card">
+                      <div className="edit-section-header">
+                        <h4>
+                          <Clock size={16} color="#2563eb" />
+                          Weekly Operating Hours & Schedule
+                        </h4>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: '#475569', cursor: 'pointer' }}>
+                            <input
+                              type="checkbox"
+                              checked={newBizNoHours}
+                              onChange={(e) => setNewBizNoHours(e.target.checked)}
+                              style={{ width: 15, height: 15, accentColor: '#2563eb' }}
+                            />
+                            <span>No operating hours available / Open 24/7</span>
+                          </label>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
+                        <p style={{ fontSize: 12.5, color: '#64748b', margin: 0, lineHeight: 1.4 }}>
+                          Caller inquiries asking "When are you open?" will refer to this schedule via the <code>get_business_hours</code> tool.
+                        </p>
+                        {!newBizNoHours && (
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => handleApplyPresetHours(false, 'weekdays')}
+                              style={{ fontSize: 11, padding: '3px 8px' }}
+                            >
+                              Weekdays (9am-5pm)
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => handleApplyPresetHours(false, 'alldays')}
+                              style={{ fontSize: 11, padding: '3px 8px' }}
+                            >
+                              All 7 Days (9am-6pm)
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => handleApplyPresetHours(false, 'saturday')}
+                              style={{ fontSize: 11, padding: '3px 8px' }}
+                            >
+                              Weekend Half-Day
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {newBizNoHours ? (
+                        <div style={{ padding: '24px 16px', background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: 10, textAlign: 'center', color: '#64748b', fontSize: 13 }}>
+                          🏢 Marked as Open 24/7 or no fixed schedule. Callers will be informed the business operates 24/7.
+                        </div>
+                      ) : (
+                        <div className="hours-schedule-container">
+                          {newBizHours.map((h) => (
+                            <div key={h.day} className={`hours-day-row ${h.closed ? 'closed-day' : ''}`}>
+                              <div className="hours-day-label">
+                                <Calendar size={14} color="#64748b" />
+                                <span>{h.day}</span>
+                              </div>
+
+                              <div className="hours-inputs-group">
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <span style={{ fontSize: 11.5, color: '#64748b' }}>Opens:</span>
+                                  <input
+                                    type="time"
+                                    className="hours-time-input"
+                                    value={h.open_time || '09:00'}
+                                    disabled={h.closed}
+                                    onChange={(e) => handleUpdateHour(false, h.day, 'open_time', e.target.value)}
+                                  />
+                                </div>
+
+                                <span style={{ color: '#94a3b8' }}>—</span>
+
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <span style={{ fontSize: 11.5, color: '#64748b' }}>Closes:</span>
+                                  <input
+                                    type="time"
+                                    className="hours-time-input"
+                                    value={h.close_time || '17:00'}
+                                    disabled={h.closed}
+                                    onChange={(e) => handleUpdateHour(false, h.day, 'close_time', e.target.value)}
+                                  />
+                                </div>
+                              </div>
+
+                              <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12.5, userSelect: 'none' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(h.closed)}
+                                  onChange={(e) => handleUpdateHour(false, h.day, 'closed', e.target.checked)}
+                                  style={{ width: 14, height: 14, accentColor: '#dc2626' }}
+                                />
+                                <span style={{ color: h.closed ? '#dc2626' : '#64748b', fontWeight: h.closed ? 700 : 500 }}>
+                                  {h.closed ? 'Closed all day' : 'Closed today?'}
+                                </span>
+                              </label>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* TAB 3: SERVICES & CATALOGUE */}
+                {addTab === 'services' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+                    <div className="edit-section-card">
+                      <div className="edit-section-header">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <h4>
+                            <FileText size={16} color="#2563eb" />
+                            Catalogue Services & Offerings
+                          </h4>
+                          <span className="badge badge-blue">
+                            {newBizNoServices ? '0 Services' : `${newBizServices.length} Active`}
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: '#475569', cursor: 'pointer' }}>
+                            <input
+                              type="checkbox"
+                              checked={newBizNoServices}
+                              onChange={(e) => setNewBizNoServices(e.target.checked)}
+                              style={{ width: 15, height: 15, accentColor: '#2563eb' }}
+                            />
+                            <span>No catalogue / services available</span>
+                          </label>
+                          {!newBizNoServices && (
+                            <button
+                              type="button"
+                              className="btn btn-primary btn-sm"
+                              onClick={() => handleAddServiceItem(false)}
+                              style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, padding: '4px 10px' }}
+                            >
+                              <Plus size={14} />
+                              <span>Add New Service</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <p style={{ fontSize: 12.5, color: '#64748b', margin: '4px 0 10px 0', lineHeight: 1.4 }}>
+                        Services define what callers can inquire about or book via <code>get_services</code> and <code>create_appointment</code>. Use the option buttons on each item to dynamically attach price, duration, or descriptions.
+                      </p>
+
+                      {newBizNoServices ? (
+                        <div style={{ padding: '24px 16px', background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: 10, textAlign: 'center', color: '#64748b', fontSize: 13 }}>
+                          ℹ️ No services configured for this business. You can add services at any time later in the Edit menu.
+                        </div>
+                      ) : newBizServices.length === 0 ? (
+                        <div style={{ padding: '28px 16px', background: '#f8fafc', border: '1.5px dashed #cbd5e1', borderRadius: 10, textAlign: 'center' }}>
+                          <p style={{ fontSize: 13, color: '#64748b', margin: '0 0 12px 0' }}>No services added yet.</p>
+                          <button
+                            type="button"
+                            className="btn btn-primary"
+                            onClick={() => handleAddServiceItem(false)}
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                          >
+                            <Plus size={15} />
+                            <span>Add First Service</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                          {newBizServices.map((svc, idx) => (
+                            <div key={svc.id} className="service-item-card">
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, borderBottom: '1px solid #e8edf4', paddingBottom: 8 }}>
+                                <span style={{ fontSize: 12, fontWeight: 700, color: '#2563eb', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                  Service #{idx + 1}
+                                </span>
+                                <button
+                                  type="button"
+                                  className="btn btn-secondary btn-sm"
+                                  onClick={() => handleRemoveServiceItem(false, svc.id)}
+                                  title="Remove this service"
+                                  style={{ color: '#dc2626', borderColor: '#fecaca', background: '#fff5f5', padding: '3px 8px' }}
+                                >
+                                  <Trash2 size={13} />
+                                  <span>Delete</span>
+                                </button>
+                              </div>
+
+                              <div className="edit-field-group" style={{ marginBottom: 12 }}>
+                                <label>
+                                  <span>Service Name *</span>
+                                </label>
+                                <input
+                                  type="text"
+                                  className="form-input"
+                                  placeholder="e.g. Consultation, Tooth Extraction, Loan Intake..."
+                                  value={svc.service_name}
+                                  onChange={(e) => handleUpdateServiceItem(false, svc.id, 'service_name', e.target.value)}
+                                  required
+                                />
+                              </div>
+
+                              {/* DYNAMIC FIELD TOGGLES ROW */}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: (svc.showPrice || svc.showDuration || svc.showDescription) ? 12 : 0 }}>
+                                <span style={{ fontSize: 11.5, color: '#64748b', fontWeight: 600 }}>Optional Fields:</span>
+                                {!svc.showPrice && (
+                                  <button
+                                    type="button"
+                                    className="btn btn-secondary btn-sm"
+                                    onClick={() => handleToggleServiceField(false, svc.id, 'price', true)}
+                                    style={{ fontSize: 11, padding: '3px 9px', background: '#ffffff' }}
+                                  >
+                                    + Add Price
+                                  </button>
+                                )}
+                                {!svc.showDuration && (
+                                  <button
+                                    type="button"
+                                    className="btn btn-secondary btn-sm"
+                                    onClick={() => handleToggleServiceField(false, svc.id, 'duration', true)}
+                                    style={{ fontSize: 11, padding: '3px 9px', background: '#ffffff' }}
+                                  >
+                                    + Add Duration
+                                  </button>
+                                )}
+                                {!svc.showDescription && (
+                                  <button
+                                    type="button"
+                                    className="btn btn-secondary btn-sm"
+                                    onClick={() => handleToggleServiceField(false, svc.id, 'description', true)}
+                                    style={{ fontSize: 11, padding: '3px 9px', background: '#ffffff' }}
+                                  >
+                                    + Add Description
+                                  </button>
+                                )}
+                              </div>
+
+                              {/* CONDITIONALLY RENDERED PRICE AND DURATION */}
+                              {(svc.showPrice || svc.showDuration) && (
+                                <div style={{ display: 'grid', gridTemplateColumns: svc.showPrice && svc.showDuration ? '1fr 1fr' : '1fr', gap: 12, marginBottom: svc.showDescription ? 12 : 0 }}>
+                                  {svc.showPrice && (
+                                    <div className="edit-field-group">
+                                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                                        <label style={{ margin: 0 }}>Price ($ USD)</label>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleToggleServiceField(false, svc.id, 'price', false)}
+                                          style={{ border: 'none', background: 'transparent', color: '#94a3b8', cursor: 'pointer', fontSize: 11 }}
+                                          title="Remove price field"
+                                        >
+                                          ✕ Remove
+                                        </button>
+                                      </div>
+                                      <input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        className="form-input"
+                                        placeholder="e.g. 49.00"
+                                        value={svc.price}
+                                        onChange={(e) => handleUpdateServiceItem(false, svc.id, 'price', e.target.value)}
+                                      />
+                                    </div>
+                                  )}
+
+                                  {svc.showDuration && (
+                                    <div className="edit-field-group">
+                                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                                        <label style={{ margin: 0 }}>Duration (Minutes)</label>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleToggleServiceField(false, svc.id, 'duration', false)}
+                                          style={{ border: 'none', background: 'transparent', color: '#94a3b8', cursor: 'pointer', fontSize: 11 }}
+                                          title="Remove duration field"
+                                        >
+                                          ✕ Remove
+                                        </button>
+                                      </div>
+                                      <input
+                                        type="number"
+                                        min="1"
+                                        className="form-input"
+                                        placeholder="e.g. 30"
+                                        value={svc.duration_minutes}
+                                        onChange={(e) => handleUpdateServiceItem(false, svc.id, 'duration_minutes', e.target.value)}
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* CONDITIONALLY RENDERED DESCRIPTION */}
+                              {svc.showDescription && (
+                                <div className="edit-field-group">
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                                    <label style={{ margin: 0 }}>Service Description</label>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleToggleServiceField(false, svc.id, 'description', false)}
+                                      style={{ border: 'none', background: 'transparent', color: '#94a3b8', cursor: 'pointer', fontSize: 11 }}
+                                      title="Remove description field"
+                                    >
+                                      ✕ Remove
+                                    </button>
+                                  </div>
+                                  <textarea
+                                    rows={2}
+                                    className="form-textarea"
+                                    placeholder="Short description of what the service covers..."
+                                    value={svc.short_description}
+                                    onChange={(e) => handleUpdateServiceItem(false, svc.id, 'short_description', e.target.value)}
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          ))}
+
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            onClick={() => handleAddServiceItem(false)}
+                            style={{ width: '100%', padding: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, borderStyle: 'dashed' }}
+                          >
+                            <Plus size={15} />
+                            <span>Add Another Service</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* TAB 4: AI VOICE AGENT & FISH AUDIO PROMPT */}
                 {addTab === 'agent' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
                     <div className="edit-section-card">
@@ -2474,44 +3097,25 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  {addTab === 'business' ? (
-                    newBiz.setup_agent_now ? (
-                      <button
-                        type="button"
-                        className="btn btn-primary"
-                        onClick={() => {
-                          if (!newBiz.name.trim()) {
-                            setCreateError('Please enter a business name first.');
-                            return;
-                          }
-                          setCreateError('');
-                          setAddTab('agent');
-                        }}
-                      >
-                        <span>Next: Voice Agent & Tools</span>
-                        <span>→</span>
-                      </button>
-                    ) : (
-                      <button
-                        type="submit"
-                        className="btn btn-primary"
-                        disabled={creating}
-                        style={{ minWidth: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
-                      >
-                        {creating ? (
-                          <>
-                            <span className="spin">⟳</span>
-                            <span>Registering Business...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Check size={16} />
-                            <span>Create Business (Skip Voice Agent)</span>
-                          </>
-                        )}
-                      </button>
-                    )
-                  ) : (
+                  {addTab === 'business' && (
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={() => {
+                        if (!newBiz.name.trim()) {
+                          setCreateError('Please enter a business name first.');
+                          return;
+                        }
+                        setCreateError('');
+                        setAddTab('hours');
+                      }}
+                    >
+                      <span>Next: Operating Hours</span>
+                      <span>→</span>
+                    </button>
+                  )}
+
+                  {addTab === 'hours' && (
                     <>
                       <button
                         type="button"
@@ -2521,10 +3125,71 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                         ← Back to Details
                       </button>
                       <button
+                        type="button"
+                        className="btn btn-primary"
+                        onClick={() => setAddTab('services')}
+                      >
+                        <span>Next: Services & Catalogue</span>
+                        <span>→</span>
+                      </button>
+                    </>
+                  )}
+
+                  {addTab === 'services' && (
+                    <>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => setAddTab('hours')}
+                      >
+                        ← Back to Hours
+                      </button>
+                      {newBiz.setup_agent_now ? (
+                        <button
+                          type="button"
+                          className="btn btn-primary"
+                          onClick={() => setAddTab('agent')}
+                        >
+                          <span>Next: Voice Agent & Prompt</span>
+                          <span>→</span>
+                        </button>
+                      ) : (
+                        <button
+                          type="submit"
+                          className="btn btn-primary"
+                          disabled={creating}
+                          style={{ minWidth: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                        >
+                          {creating ? (
+                            <>
+                              <span className="spin">⟳</span>
+                              <span>Registering Business...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Check size={16} />
+                              <span>Create Business (Skip Voice Agent)</span>
+                            </>
+                          )}
+                        </button>
+                      )}
+                    </>
+                  )}
+
+                  {addTab === 'agent' && (
+                    <>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => setAddTab('services')}
+                      >
+                        ← Back to Services
+                      </button>
+                      <button
                         type="submit"
                         className="btn btn-primary"
                         disabled={creating}
-                        style={{ minWidth: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                        style={{ minWidth: 220, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
                       >
                         {creating ? (
                           <>
@@ -2596,15 +3261,23 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                 onClick={() => setEditTab('profile')}
               >
                 <Building2 size={15} />
-                <span>General Profile</span>
+                <span>1. General & About</span>
               </button>
               <button
                 type="button"
-                className={`edit-tab-btn ${editTab === 'contact' ? 'active' : ''}`}
-                onClick={() => setEditTab('contact')}
+                className={`edit-tab-btn ${editTab === 'hours' ? 'active' : ''}`}
+                onClick={() => setEditTab('hours')}
               >
-                <Phone size={15} />
-                <span>Contact & Hours</span>
+                <Clock size={15} />
+                <span>2. Operating Hours</span>
+              </button>
+              <button
+                type="button"
+                className={`edit-tab-btn ${editTab === 'services' ? 'active' : ''}`}
+                onClick={() => setEditTab('services')}
+              >
+                <FileText size={15} />
+                <span>3. Services & Catalogue</span>
               </button>
               <button
                 type="button"
@@ -2612,7 +3285,7 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                 onClick={() => setEditTab('voice')}
               >
                 <Bot size={15} />
-                <span>Voice & AI Routing</span>
+                <span>4. Voice & AI Routing</span>
               </button>
             </div>
 
@@ -2624,6 +3297,7 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                   </div>
                 )}
 
+                {/* TAB 1: GENERAL & ABOUT */}
                 {editTab === 'profile' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                     <div className="edit-field-group">
@@ -2672,27 +3346,13 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                       <input
                         type="text"
                         className="form-input"
-                        placeholder="e.g. Fine Dining & Hospitality, Healthcare..."
+                        placeholder="e.g. Fine Dining & Hospitality, Healthcare, Banking..."
                         value={editingBiz.industry || ''}
                         onChange={(e) => setEditingBiz({ ...editingBiz, industry: e.target.value })}
                       />
                     </div>
 
-                    <div className="edit-field-group">
-                      <label>Business Mission & Scope</label>
-                      <textarea
-                        rows={3}
-                        className="form-textarea"
-                        placeholder="Provide short background for voice agent knowledge..."
-                        value={editingBiz.description || ''}
-                        onChange={(e) => setEditingBiz({ ...editingBiz, description: e.target.value })}
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {editTab === 'contact' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    {/* CONTACT & LOCATION FIELDS */}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                       <div className="edit-field-group">
                         <label>Telephone</label>
@@ -2745,26 +3405,391 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                       </div>
                     </div>
 
-                    <div className="edit-field-group">
-                      <label>Website URL</label>
-                      <input
-                        type="text"
-                        className="form-input"
-                        placeholder="https://example.com"
-                        value={editingBiz.website || ''}
-                        onChange={(e) => setEditingBiz({ ...editingBiz, website: e.target.value })}
-                      />
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                      <div className="edit-field-group">
+                        <label>Website URL</label>
+                        <input
+                          type="text"
+                          className="form-input"
+                          placeholder="https://example.com"
+                          value={editingBiz.website || ''}
+                          onChange={(e) => setEditingBiz({ ...editingBiz, website: e.target.value })}
+                        />
+                      </div>
+
+                      <div className="edit-field-group">
+                        <label>Physical Address</label>
+                        <input
+                          type="text"
+                          className="form-input"
+                          placeholder="123 Main St, Suite 400..."
+                          value={editingBiz.address || ''}
+                          onChange={(e) => setEditingBiz({ ...editingBiz, address: e.target.value })}
+                        />
+                      </div>
                     </div>
 
-                    <div className="edit-field-group">
-                      <label>Physical Address</label>
-                      <input
-                        type="text"
-                        className="form-input"
-                        placeholder="123 Main St, Suite 400..."
-                        value={editingBiz.address || ''}
-                        onChange={(e) => setEditingBiz({ ...editingBiz, address: e.target.value })}
-                      />
+                    {/* DEDICATED ABOUT THE BUSINESS / AI KNOWLEDGE BASE */}
+                    <div className="edit-section-card" style={{ background: '#f8fafc' }}>
+                      <div className="edit-section-header">
+                        <h4>
+                          <FileText size={16} color="#2563eb" />
+                          About the Business (AI Knowledge Base & FAQs)
+                        </h4>
+                        <span className="badge badge-blue">Knowledge Ground Truth</span>
+                      </div>
+                      <p style={{ fontSize: 12.5, color: '#475569', margin: '4px 0 10px 0', lineHeight: 1.4 }}>
+                        Background facts, cancellation policies, FAQs, parking details, and instructions provided to callers by the AI voice agent.
+                      </p>
+
+                      <div className="edit-field-group">
+                        <textarea
+                          rows={4}
+                          className="form-textarea"
+                          placeholder="Provide comprehensive background and FAQs for voice agent knowledge..."
+                          value={editingBiz.description || ''}
+                          onChange={(e) => setEditingBiz({ ...editingBiz, description: e.target.value })}
+                          style={{ fontSize: 13, lineHeight: 1.5 }}
+                        />
+                        <small>Directly synchronized with live agent context and runtime prompts.</small>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* TAB 2: OPERATING HOURS */}
+                {editTab === 'hours' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+                    <div className="edit-section-card">
+                      <div className="edit-section-header">
+                        <h4>
+                          <Clock size={16} color="#2563eb" />
+                          Weekly Operating Hours & Schedule
+                        </h4>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: '#475569', cursor: 'pointer' }}>
+                            <input
+                              type="checkbox"
+                              checked={editBizNoHours}
+                              onChange={(e) => setEditBizNoHours(e.target.checked)}
+                              style={{ width: 15, height: 15, accentColor: '#2563eb' }}
+                            />
+                            <span>No operating hours available / Open 24/7</span>
+                          </label>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
+                        <p style={{ fontSize: 12.5, color: '#64748b', margin: 0, lineHeight: 1.4 }}>
+                          Caller inquiries asking about business hours are answered using this schedule.
+                        </p>
+                        {!editBizNoHours && (
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => handleApplyPresetHours(true, 'weekdays')}
+                              style={{ fontSize: 11, padding: '3px 8px' }}
+                            >
+                              Weekdays (9am-5pm)
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => handleApplyPresetHours(true, 'alldays')}
+                              style={{ fontSize: 11, padding: '3px 8px' }}
+                            >
+                              All 7 Days (9am-6pm)
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => handleApplyPresetHours(true, 'saturday')}
+                              style={{ fontSize: 11, padding: '3px 8px' }}
+                            >
+                              Weekend Half-Day
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {editBizNoHours ? (
+                        <div style={{ padding: '24px 16px', background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: 10, textAlign: 'center', color: '#64748b', fontSize: 13 }}>
+                          🏢 Marked as Open 24/7 or no fixed schedule.
+                        </div>
+                      ) : (
+                        <div className="hours-schedule-container">
+                          {editBizHours.map((h) => (
+                            <div key={h.day} className={`hours-day-row ${h.closed ? 'closed-day' : ''}`}>
+                              <div className="hours-day-label">
+                                <Calendar size={14} color="#64748b" />
+                                <span>{h.day}</span>
+                              </div>
+
+                              <div className="hours-inputs-group">
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <span style={{ fontSize: 11.5, color: '#64748b' }}>Opens:</span>
+                                  <input
+                                    type="time"
+                                    className="hours-time-input"
+                                    value={h.open_time || '09:00'}
+                                    disabled={h.closed}
+                                    onChange={(e) => handleUpdateHour(true, h.day, 'open_time', e.target.value)}
+                                  />
+                                </div>
+
+                                <span style={{ color: '#94a3b8' }}>—</span>
+
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <span style={{ fontSize: 11.5, color: '#64748b' }}>Closes:</span>
+                                  <input
+                                    type="time"
+                                    className="hours-time-input"
+                                    value={h.close_time || '17:00'}
+                                    disabled={h.closed}
+                                    onChange={(e) => handleUpdateHour(true, h.day, 'close_time', e.target.value)}
+                                  />
+                                </div>
+                              </div>
+
+                              <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12.5, userSelect: 'none' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(h.closed)}
+                                  onChange={(e) => handleUpdateHour(true, h.day, 'closed', e.target.checked)}
+                                  style={{ width: 14, height: 14, accentColor: '#dc2626' }}
+                                />
+                                <span style={{ color: h.closed ? '#dc2626' : '#64748b', fontWeight: h.closed ? 700 : 500 }}>
+                                  {h.closed ? 'Closed all day' : 'Closed today?'}
+                                </span>
+                              </label>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* TAB 3: SERVICES & CATALOGUE */}
+                {editTab === 'services' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+                    <div className="edit-section-card">
+                      <div className="edit-section-header">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <h4>
+                            <FileText size={16} color="#2563eb" />
+                            Catalogue Services & Offerings
+                          </h4>
+                          <span className="badge badge-blue">
+                            {editBizNoServices ? '0 Services' : `${editBizServices.length} Active`}
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: '#475569', cursor: 'pointer' }}>
+                            <input
+                              type="checkbox"
+                              checked={editBizNoServices}
+                              onChange={(e) => setEditBizNoServices(e.target.checked)}
+                              style={{ width: 15, height: 15, accentColor: '#2563eb' }}
+                            />
+                            <span>No catalogue / services available</span>
+                          </label>
+                          {!editBizNoServices && (
+                            <button
+                              type="button"
+                              className="btn btn-primary btn-sm"
+                              onClick={() => handleAddServiceItem(true)}
+                              style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, padding: '4px 10px' }}
+                            >
+                              <Plus size={14} />
+                              <span>Add New Service</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <p style={{ fontSize: 12.5, color: '#64748b', margin: '4px 0 10px 0', lineHeight: 1.4 }}>
+                        Services available for customer consultation or booking. Optional fields can be enabled or removed dynamically on each service.
+                      </p>
+
+                      {editBizNoServices ? (
+                        <div style={{ padding: '24px 16px', background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: 10, textAlign: 'center', color: '#64748b', fontSize: 13 }}>
+                          ℹ️ No services configured. Callers asking for services will be informed that general assistance is provided.
+                        </div>
+                      ) : editBizServices.length === 0 ? (
+                        <div style={{ padding: '28px 16px', background: '#f8fafc', border: '1.5px dashed #cbd5e1', borderRadius: 10, textAlign: 'center' }}>
+                          <p style={{ fontSize: 13, color: '#64748b', margin: '0 0 12px 0' }}>No services configured yet.</p>
+                          <button
+                            type="button"
+                            className="btn btn-primary"
+                            onClick={() => handleAddServiceItem(true)}
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                          >
+                            <Plus size={15} />
+                            <span>Add First Service</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                          {editBizServices.map((svc, idx) => (
+                            <div key={svc.id} className="service-item-card">
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, borderBottom: '1px solid #e8edf4', paddingBottom: 8 }}>
+                                <span style={{ fontSize: 12, fontWeight: 700, color: '#2563eb', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                  Service #{idx + 1}
+                                </span>
+                                <button
+                                  type="button"
+                                  className="btn btn-secondary btn-sm"
+                                  onClick={() => handleRemoveServiceItem(true, svc.id)}
+                                  title="Remove this service"
+                                  style={{ color: '#dc2626', borderColor: '#fecaca', background: '#fff5f5', padding: '3px 8px' }}
+                                >
+                                  <Trash2 size={13} />
+                                  <span>Delete</span>
+                                </button>
+                              </div>
+
+                              <div className="edit-field-group" style={{ marginBottom: 12 }}>
+                                <label>
+                                  <span>Service Name *</span>
+                                </label>
+                                <input
+                                  type="text"
+                                  className="form-input"
+                                  placeholder="e.g. Consultation, Tooth Extraction, Loan Intake..."
+                                  value={svc.service_name}
+                                  onChange={(e) => handleUpdateServiceItem(true, svc.id, 'service_name', e.target.value)}
+                                  required
+                                />
+                              </div>
+
+                              {/* DYNAMIC FIELD TOGGLES ROW */}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: (svc.showPrice || svc.showDuration || svc.showDescription) ? 12 : 0 }}>
+                                <span style={{ fontSize: 11.5, color: '#64748b', fontWeight: 600 }}>Optional Fields:</span>
+                                {!svc.showPrice && (
+                                  <button
+                                    type="button"
+                                    className="btn btn-secondary btn-sm"
+                                    onClick={() => handleToggleServiceField(true, svc.id, 'price', true)}
+                                    style={{ fontSize: 11, padding: '3px 9px', background: '#ffffff' }}
+                                  >
+                                    + Add Price
+                                  </button>
+                                )}
+                                {!svc.showDuration && (
+                                  <button
+                                    type="button"
+                                    className="btn btn-secondary btn-sm"
+                                    onClick={() => handleToggleServiceField(true, svc.id, 'duration', true)}
+                                    style={{ fontSize: 11, padding: '3px 9px', background: '#ffffff' }}
+                                  >
+                                    + Add Duration
+                                  </button>
+                                )}
+                                {!svc.showDescription && (
+                                  <button
+                                    type="button"
+                                    className="btn btn-secondary btn-sm"
+                                    onClick={() => handleToggleServiceField(true, svc.id, 'description', true)}
+                                    style={{ fontSize: 11, padding: '3px 9px', background: '#ffffff' }}
+                                  >
+                                    + Add Description
+                                  </button>
+                                )}
+                              </div>
+
+                              {/* CONDITIONALLY RENDERED PRICE AND DURATION */}
+                              {(svc.showPrice || svc.showDuration) && (
+                                <div style={{ display: 'grid', gridTemplateColumns: svc.showPrice && svc.showDuration ? '1fr 1fr' : '1fr', gap: 12, marginBottom: svc.showDescription ? 12 : 0 }}>
+                                  {svc.showPrice && (
+                                    <div className="edit-field-group">
+                                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                                        <label style={{ margin: 0 }}>Price ($ USD)</label>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleToggleServiceField(true, svc.id, 'price', false)}
+                                          style={{ border: 'none', background: 'transparent', color: '#94a3b8', cursor: 'pointer', fontSize: 11 }}
+                                          title="Remove price field"
+                                        >
+                                          ✕ Remove
+                                        </button>
+                                      </div>
+                                      <input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        className="form-input"
+                                        placeholder="e.g. 49.00"
+                                        value={svc.price}
+                                        onChange={(e) => handleUpdateServiceItem(true, svc.id, 'price', e.target.value)}
+                                      />
+                                    </div>
+                                  )}
+
+                                  {svc.showDuration && (
+                                    <div className="edit-field-group">
+                                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                                        <label style={{ margin: 0 }}>Duration (Minutes)</label>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleToggleServiceField(true, svc.id, 'duration', false)}
+                                          style={{ border: 'none', background: 'transparent', color: '#94a3b8', cursor: 'pointer', fontSize: 11 }}
+                                          title="Remove duration field"
+                                        >
+                                          ✕ Remove
+                                        </button>
+                                      </div>
+                                      <input
+                                        type="number"
+                                        min="1"
+                                        className="form-input"
+                                        placeholder="e.g. 30"
+                                        value={svc.duration_minutes}
+                                        onChange={(e) => handleUpdateServiceItem(true, svc.id, 'duration_minutes', e.target.value)}
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* CONDITIONALLY RENDERED DESCRIPTION */}
+                              {svc.showDescription && (
+                                <div className="edit-field-group">
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                                    <label style={{ margin: 0 }}>Service Description</label>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleToggleServiceField(true, svc.id, 'description', false)}
+                                      style={{ border: 'none', background: 'transparent', color: '#94a3b8', cursor: 'pointer', fontSize: 11 }}
+                                      title="Remove description field"
+                                    >
+                                      ✕ Remove
+                                    </button>
+                                  </div>
+                                  <textarea
+                                    rows={2}
+                                    className="form-textarea"
+                                    placeholder="Short description of what the service covers..."
+                                    value={svc.short_description}
+                                    onChange={(e) => handleUpdateServiceItem(true, svc.id, 'short_description', e.target.value)}
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          ))}
+
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            onClick={() => handleAddServiceItem(true)}
+                            style={{ width: '100%', padding: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, borderStyle: 'dashed' }}
+                          >
+                            <Plus size={15} />
+                            <span>Add Another Service</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}

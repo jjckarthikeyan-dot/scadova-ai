@@ -48,6 +48,8 @@ class BusinessCreatePayload(BaseModel):
     voice_id: Optional[str] = None
     voice_name: Optional[str] = None
     language: Optional[str] = "en"
+    hours_data: Optional[List[Dict[str, Any]]] = None
+    services_data: Optional[List[Dict[str, Any]]] = None
     system_prompt: Optional[str] = None
     first_message: Optional[str] = None
     attached_tools: Optional[List[str]] = None
@@ -67,6 +69,8 @@ class BusinessUpdatePayload(BaseModel):
     address: Optional[str] = None
     description: Optional[str] = None
     status: Optional[str] = None
+    hours_data: Optional[List[Dict[str, Any]]] = None
+    services_data: Optional[List[Dict[str, Any]]] = None
     agent_name: Optional[str] = None
     fish_agent_id: Optional[str] = None
     agent_id: Optional[str] = None
@@ -218,7 +222,45 @@ async def create_business(payload: BusinessCreatePayload):
     """Register a new business and auto-provision its Voice Agent with industry prompt ready for Fish Audio."""
     data = payload.model_dump()
     biz = data_store.add_business(data)
-    
+    biz_id = biz.get("id")
+
+    # Persist services to Supabase if configured
+    if payload.services_data and biz_id:
+        try:
+            from backend.core.supabase import supabase
+            for s in payload.services_data:
+                s_name = (s.get("service_name") or s.get("name") or "").strip()
+                if s_name:
+                    s_price = s.get("price")
+                    s_dur = s.get("duration_minutes")
+                    s_desc = (s.get("description") or s.get("short_description") or "").strip()
+                    supabase.table("services").insert({
+                        "business_id": biz_id,
+                        "service_name": s_name,
+                        "short_description": s_desc,
+                        "detailed_description": s_desc,
+                        "price": float(s_price) if s_price is not None and str(s_price).strip() != "" else None,
+                        "duration_minutes": int(s_dur) if s_dur is not None and str(s_dur).strip() != "" else None,
+                        "active": True
+                    }).execute()
+        except Exception as e:
+            logger.debug(f"Catalogue services table sync: {e}")
+
+    # Persist operating hours to Supabase if configured
+    if payload.hours_data and biz_id:
+        try:
+            from backend.core.supabase import supabase
+            for h in payload.hours_data:
+                supabase.table("business_hours").insert({
+                    "business_id": biz_id,
+                    "day": (h.get("day") or "").lower(),
+                    "open_time": None if h.get("closed") else h.get("open_time"),
+                    "close_time": None if h.get("closed") else h.get("close_time"),
+                    "closed": bool(h.get("closed"))
+                }).execute()
+        except Exception as e:
+            logger.debug(f"Business hours table sync: {e}")
+
     if payload.auto_create_agent:
         biz_id = biz.get("id")
         b_key = biz.get("business_key") or f"biz_{biz_id}"
@@ -348,10 +390,29 @@ async def update_industry_template_endpoint(industry_key: str, payload: Dict[str
 
 @router.get("/businesses/{business_id}")
 async def get_business(business_id: str):
-    """Get single business details."""
+    """Get single business details including services and operating hours."""
     biz = data_store.get_business(business_id)
     if not biz:
         raise HTTPException(status_code=404, detail="Business not found")
+    
+    biz_id = biz.get("id")
+    if biz_id:
+        try:
+            from backend.core.supabase import supabase
+            s_res = supabase.table("services").select("*").eq("business_id", biz_id).execute()
+            biz["services"] = s_res.data or []
+        except Exception as e:
+            logger.debug(f"Fetch services note: {e}")
+            biz["services"] = []
+
+        try:
+            from backend.core.supabase import supabase
+            h_res = supabase.table("business_hours").select("*").eq("business_id", biz_id).execute()
+            biz["hours"] = h_res.data or []
+        except Exception as e:
+            logger.debug(f"Fetch hours note: {e}")
+            biz["hours"] = []
+
     return biz
 
 
@@ -361,6 +422,48 @@ async def update_business(business_id: str, payload: BusinessUpdatePayload):
     updated = data_store.update_business(business_id, payload.model_dump(exclude_unset=True))
     if not updated:
         raise HTTPException(status_code=404, detail="Business not found")
+
+    biz_id = updated.get("id")
+    if biz_id:
+        from backend.core.supabase import supabase
+        # Sync services if provided
+        if payload.services_data is not None:
+            try:
+                supabase.table("services").delete().eq("business_id", biz_id).execute()
+                for s in payload.services_data:
+                    s_name = (s.get("service_name") or s.get("name") or "").strip()
+                    if not s_name:
+                        continue
+                    s_price = s.get("price")
+                    s_dur = s.get("duration_minutes") or s.get("duration")
+                    s_desc = s.get("short_description") or s.get("description") or ""
+                    supabase.table("services").insert({
+                        "business_id": biz_id,
+                        "service_name": s_name,
+                        "short_description": s_desc,
+                        "detailed_description": s_desc,
+                        "price": float(s_price) if s_price is not None and str(s_price).strip() != "" else None,
+                        "duration_minutes": int(s_dur) if s_dur is not None and str(s_dur).strip() != "" else None,
+                        "active": True
+                    }).execute()
+            except Exception as e:
+                logger.debug(f"Update services sync note: {e}")
+
+        # Sync hours if provided
+        if payload.hours_data is not None:
+            try:
+                supabase.table("business_hours").delete().eq("business_id", biz_id).execute()
+                for h in payload.hours_data:
+                    supabase.table("business_hours").insert({
+                        "business_id": biz_id,
+                        "day": (h.get("day") or "").lower(),
+                        "open_time": None if h.get("closed") else h.get("open_time"),
+                        "close_time": None if h.get("closed") else h.get("close_time"),
+                        "closed": bool(h.get("closed"))
+                    }).execute()
+            except Exception as e:
+                logger.debug(f"Update hours sync note: {e}")
+
     return updated
 
 

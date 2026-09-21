@@ -1759,3 +1759,81 @@ input[type=checkbox] { accent-color:#2563eb; width:16px; height:16px; flex-shrin
   border-radius: 50%;
   background: #ffffff;
 }
+
+/* Operating Hours Schedule */
+.hours-schedule-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.hours-day-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  transition: all 0.15s ease;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.hours-day-row:hover {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+}
+
+.hours-day-row.closed-day {
+  background: #f8fafc;
+  opacity: 0.75;
+}
+
+.hours-day-label {
+  font-weight: 700;
+  font-size: 13.5px;
+  color: #0f172a;
+  min-width: 105px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hours-inputs-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.hours-time-input {
+  padding: 6px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 13px;
+  font-family: inherit;
+  color: #0f172a;
+  background: #ffffff;
+}
+
+.hours-time-input:disabled {
+  background: #f1f5f9;
+  color: #94a3b8;
+  cursor: not-allowed;
+}
+
+/* Service Item Card */
+.service-item-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 14px;
+  transition: all 0.15s ease;
+}
+
+.service-item-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+}
