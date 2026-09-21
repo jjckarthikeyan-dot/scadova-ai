@@ -25,7 +25,8 @@ import {
   CheckCheck,
   Wand2,
   Code2,
-  RotateCcw
+  RotateCcw,
+  AlertCircle
 } from 'lucide-react';
 import { apiFetch } from '../api';
 
@@ -43,6 +44,17 @@ const DEFAULT_WEEK_HOURS = [
 ];
 
 // ============================================================
+// FISH AUDIO VOICE PROFILE MASTER DIRECTORY
+// ============================================================
+export const VOICE_PROFILES = [
+  { id: 'fish_audio_default', name: 'Fish Audio Default', label: 'Fish Audio Default (System Standard)', group: 'default' },
+  { id: 'serena_exec_en', name: 'Fish Audio - Serena (Executive English)', label: 'Fish Audio - Serena (Executive English)', group: 'curated' },
+  { id: 'marcus_conv_en', name: 'Fish Audio - Marcus (Conversational English)', label: 'Fish Audio - Marcus (Conversational English)', group: 'curated' },
+  { id: 'sophia_care_en', name: 'Fish Audio - Sophia (Warm Healthcare English)', label: 'Fish Audio - Sophia (Warm Healthcare English)', group: 'curated' },
+  { id: 'ravi_finance_te_en', name: 'Fish Audio - Ravi (Professional Multilingual)', label: 'Fish Audio - Ravi (Professional Multilingual)', group: 'curated' },
+];
+
+// ============================================================
 // INDUSTRY SYSTEM PROMPTS & GREETING TEMPLATES (DEFAULTS)
 // ============================================================
 const DEFAULT_TEMPLATES = {
@@ -50,8 +62,8 @@ const DEFAULT_TEMPLATES = {
     key: 'service_and_appointment',
     label: 'Appointment Booking & Service Consultation',
     role: 'Appointment & Consultation Specialist',
-    voice_name: 'Serena - Executive English',
-    voice_id: 'serena_exec_en',
+    voice_name: 'Fish Audio Default',
+    voice_id: 'fish_audio_default',
     language: 'en',
     tools: [
       'get_services',
@@ -776,8 +788,8 @@ Do not continue speaking after the closing.`
     key: 'restaurant',
     label: 'Restaurant & Dining Hospitality',
     role: 'Dining Host & Reservation Specialist',
-    voice_name: 'Marcus - Conversational English',
-    voice_id: 'marcus_conv_en',
+    voice_name: 'Fish Audio Default',
+    voice_id: 'fish_audio_default',
     language: 'en',
     tools: [
       'get_menu',
@@ -837,8 +849,8 @@ If no: "Thank you for contacting {{business_name}}. We look forward to serving y
     key: 'clinic',
     label: 'Clinic & Healthcare Consultation',
     role: 'Patient Care & Clinical Coordinator',
-    voice_name: 'Sophia - Warm Healthcare English',
-    voice_id: 'sophia_care_en',
+    voice_name: 'Fish Audio Default',
+    voice_id: 'fish_audio_default',
     language: 'en',
     tools: [
       'get_services',
@@ -892,8 +904,8 @@ CLOSING
     key: 'loan_finance',
     label: 'Loan & Financial Services',
     role: 'Loan Officer & Financial Intake Specialist',
-    voice_name: 'Ravi - Warm & Professional',
-    voice_id: 'ravi_finance_te_en',
+    voice_name: 'Fish Audio Default',
+    voice_id: 'fish_audio_default',
     language: 'en',
     tools: [
       'get_loan_products',
@@ -1011,14 +1023,20 @@ export default function BusinessesPage({ onOpenOnboarding }) {
     description: '',
     setup_agent_now: true,
     agent_name: '',
-    voice_id: 'serena_exec_en',
-    voice_name: 'Serena - Executive English',
+    voice_id: 'fish_audio_default',
+    voice_name: 'Fish Audio Default',
     language: 'en',
     greeting: '',
     system_prompt: '',
     attached_tools: [],
     auto_create_agent: true
   });
+
+  // Custom / Public Fish Audio Voice IDs
+  const [newBizCustomVoice, setNewBizCustomVoice] = useState(false);
+  const [newBizCustomVoiceId, setNewBizCustomVoiceId] = useState('');
+  const [editBizCustomVoice, setEditBizCustomVoice] = useState(false);
+  const [editBizCustomVoiceId, setEditBizCustomVoiceId] = useState('');
 
   // Services and Operating Hours state for Add Business modal
   const [newBizHours, setNewBizHours] = useState(DEFAULT_WEEK_HOURS);
@@ -1184,14 +1202,16 @@ export default function BusinessesPage({ onOpenOnboarding }) {
       description: '',
       setup_agent_now: true,
       agent_name: defaultAgent,
-      voice_id: defaultTemplate.default_voice_id || defaultTemplate.voice_id || 'serena_exec_en',
-      voice_name: defaultTemplate.default_voice_name || defaultTemplate.voice_name || 'Serena - Executive English',
+      voice_id: defaultTemplate.default_voice_id || defaultTemplate.voice_id || 'fish_audio_default',
+      voice_name: defaultTemplate.default_voice_name || defaultTemplate.voice_name || 'Fish Audio Default',
       language: defaultTemplate.default_language || defaultTemplate.language || 'en',
       greeting: renderTemplateText(defaultTemplate.greeting, defaultName || '{{business_name}}', defaultAgent, defaultKey),
       system_prompt: renderTemplateText(defaultTemplate.system_prompt, defaultName || '{{business_name}}', defaultAgent, defaultKey),
       attached_tools: [...(defaultTemplate.tools || [])],
       auto_create_agent: true
     });
+    setNewBizCustomVoice(false);
+    setNewBizCustomVoiceId('');
     setNewBizHours(DEFAULT_WEEK_HOURS);
     setNewBizNoHours(false);
     setNewBizServices([
@@ -1226,13 +1246,15 @@ export default function BusinessesPage({ onOpenOnboarding }) {
     const agentName = newBiz.name.trim() ? `${newBiz.name.trim()} AI Assistant` : (t.default_agent_role || t.role || 'Voice Assistant');
     const bizKey = newBiz.name.trim() ? newBiz.name.trim().toLowerCase().replace(/\s+/g, '_') : '{{business_key}}';
 
+    setNewBizCustomVoice(false);
+    setNewBizCustomVoiceId('');
     setNewBiz((prev) => ({
       ...prev,
       industry: newIndustryKey,
       type: t.label,
       agent_name: agentName,
-      voice_id: t.default_voice_id || t.voice_id || 'serena_exec_en',
-      voice_name: t.default_voice_name || t.voice_name || 'Serena - Executive English',
+      voice_id: t.default_voice_id || t.voice_id || 'fish_audio_default',
+      voice_name: t.default_voice_name || t.voice_name || 'Fish Audio Default',
       language: t.default_language || t.language || 'en',
       greeting: renderTemplateText(t.greeting, bizName, agentName, bizKey),
       system_prompt: renderTemplateText(t.system_prompt, bizName, agentName, bizKey),
@@ -1411,8 +1433,8 @@ export default function BusinessesPage({ onOpenOnboarding }) {
 
       if (isAgentNow) {
         payload.agent_name = newBiz.agent_name?.trim() || `${newBiz.name.trim()} AI Assistant`;
-        payload.voice_id = newBiz.voice_id;
-        payload.voice_name = newBiz.voice_name;
+        payload.voice_id = newBizCustomVoice && newBizCustomVoiceId.trim() ? newBizCustomVoiceId.trim() : (newBiz.voice_id || 'fish_audio_default');
+        payload.voice_name = newBizCustomVoice && newBizCustomVoiceId.trim() ? `Public Voice (${newBizCustomVoiceId.trim()})` : (newBiz.voice_name || 'Fish Audio Default');
         payload.language = newBiz.language;
         payload.first_message = newBiz.greeting;
         payload.system_prompt = newBiz.system_prompt;
@@ -1447,6 +1469,10 @@ export default function BusinessesPage({ onOpenOnboarding }) {
     const bKey = biz.business_key || bName.toLowerCase().replace(/\s+/g, '_');
     const hasConfiguredAgent = Boolean(biz.has_agent || (biz.agent_name && (biz.fish_agent_id || biz.agent_id)));
 
+    const isCustomVoice = biz.voice_id && !VOICE_PROFILES.some((v) => v.id === biz.voice_id) && biz.voice_id !== 'fish_audio_default';
+    setEditBizCustomVoice(Boolean(isCustomVoice));
+    setEditBizCustomVoiceId(isCustomVoice ? (biz.voice_id || '') : '');
+
     setEditingBiz({
       ...biz,
       type: biz.type || biz.business_type || t.label,
@@ -1455,8 +1481,8 @@ export default function BusinessesPage({ onOpenOnboarding }) {
       agent_name: biz.agent_name || aName,
       fish_agent_id: biz.fish_agent_id || biz.agent_id || `agent_${bKey.replace(/[^a-z0-9_]/g, '').slice(0, 20)}`,
       agent_id: biz.fish_agent_id || biz.agent_id || `agent_${bKey.replace(/[^a-z0-9_]/g, '').slice(0, 20)}`,
-      voice: biz.voice || t.voice_name || 'Serena - Executive English',
-      voice_id: biz.voice_id || t.voice_id || 'serena_exec_en',
+      voice: biz.voice || t.voice_name || 'Fish Audio Default',
+      voice_id: biz.voice_id || t.voice_id || 'fish_audio_default',
       prompt_version: biz.prompt_version || 'v1.0',
       first_message: biz.first_message || renderTemplateText(t.greeting, bName, aName, bKey),
       system_prompt: biz.system_prompt || renderTemplateText(t.system_prompt, bName, aName, bKey),
@@ -1540,9 +1566,9 @@ export default function BusinessesPage({ onOpenOnboarding }) {
         description: editingBiz.description?.trim(),
         agent_name: editingBiz.agent_name?.trim(),
         fish_agent_id: editingBiz.fish_agent_id?.trim() || editingBiz.agent_id?.trim(),
-        agent_id: editingBiz.fish_agent_id?.trim() || editingBiz.agent_id?.trim(),
-        voice: editingBiz.voice?.trim(),
-        voice_id: editingBiz.voice_id?.trim(),
+        voice: editBizCustomVoice && editBizCustomVoiceId.trim() ? `Public Voice (${editBizCustomVoiceId.trim()})` : (editingBiz.voice?.trim() || 'Fish Audio Default'),
+        voice_id: editBizCustomVoice && editBizCustomVoiceId.trim() ? editBizCustomVoiceId.trim() : (editingBiz.voice_id?.trim() || 'fish_audio_default'),
+        voice_name: editBizCustomVoice && editBizCustomVoiceId.trim() ? `Public Voice (${editBizCustomVoiceId.trim()})` : (editingBiz.voice?.trim() || 'Fish Audio Default'),
         language: editingBiz.language,
         llm: editingBiz.llm?.trim(),
         prompt_version: editingBiz.prompt_version?.trim() || 'v1.0',
@@ -2326,8 +2352,12 @@ export default function BusinessesPage({ onOpenOnboarding }) {
             <form onSubmit={handleCreateBusiness}>
               <div className="modal-body" style={{ padding: '24px', overflowY: 'auto', maxHeight: '65vh' }}>
                 {createError && (
-                  <div className="notice error" style={{ marginBottom: 16 }}>
-                    {createError}
+                  <div className="modal-alert-error" style={{ marginBottom: 18 }}>
+                    <AlertCircle size={18} style={{ flexShrink: 0, marginTop: 1 }} />
+                    <div style={{ flex: 1 }}>
+                      <strong style={{ display: 'block', fontSize: 13.5, marginBottom: 2 }}>Unable to Create Business</strong>
+                      <span style={{ fontSize: 13 }}>{createError}</span>
+                    </div>
                   </div>
                 )}
 
@@ -2915,16 +2945,45 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                         </div>
 
                         <div className="edit-field-group">
-                          <label>Voice Profile</label>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
+                            <label style={{ margin: 0 }}>Voice Profile</label>
+                            <span className="badge-voice-default">Fish Audio</span>
+                          </div>
                           <select
                             className="form-select"
-                            value={newBiz.voice_name}
-                            onChange={(e) => setNewBiz({ ...newBiz, voice_name: e.target.value })}
+                            value={newBizCustomVoice ? 'custom_public' : (newBiz.voice_id || 'fish_audio_default')}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val === 'custom_public') {
+                                setNewBizCustomVoice(true);
+                                setNewBiz((prev) => ({
+                                  ...prev,
+                                  voice_id: newBizCustomVoiceId.trim() || 'fish_audio_default',
+                                  voice_name: newBizCustomVoiceId.trim() ? `Public Voice (${newBizCustomVoiceId.trim()})` : 'Custom Public Voice'
+                                }));
+                              } else {
+                                setNewBizCustomVoice(false);
+                                const profile = VOICE_PROFILES.find((p) => p.id === val);
+                                setNewBiz((prev) => ({
+                                  ...prev,
+                                  voice_id: val,
+                                  voice_name: profile ? profile.name : 'Fish Audio Default'
+                                }));
+                              }
+                            }}
                           >
-                            <option value="Serena - Executive English">Serena - Executive English</option>
-                            <option value="Marcus - Conversational English">Marcus - Conversational English</option>
-                            <option value="Sophia - Warm Healthcare English">Sophia - Warm Healthcare English</option>
-                            <option value="Ravi - Warm & Professional">Ravi - Warm & Professional</option>
+                            <optgroup label="Default (Standard)">
+                              <option value="fish_audio_default">Fish Audio Default (System Standard)</option>
+                            </optgroup>
+                            <optgroup label="Curated Fish Audio Voices">
+                              <option value="serena_exec_en">Fish Audio - Serena (Executive English)</option>
+                              <option value="marcus_conv_en">Fish Audio - Marcus (Conversational English)</option>
+                              <option value="sophia_care_en">Fish Audio - Sophia (Warm Healthcare English)</option>
+                              <option value="ravi_finance_te_en">Fish Audio - Ravi (Professional Multilingual)</option>
+                            </optgroup>
+                            <optgroup label="Public / Custom Voice Models">
+                              <option value="custom_public">Public / Custom Voice Model ID...</option>
+                            </optgroup>
                           </select>
                         </div>
 
@@ -2941,6 +3000,40 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                           </select>
                         </div>
                       </div>
+
+                      {/* PUBLIC VOICE MODEL INPUT OR DEFAULT CALLOUT */}
+                      {newBizCustomVoice ? (
+                        <div style={{ marginTop: 12, padding: '12px 16px', background: '#f8fafc', border: '1.5px solid #cbd5e1', borderRadius: 10 }}>
+                          <label style={{ fontSize: 12, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 5 }}>
+                            Fish Audio Public Voice ID / Reference
+                          </label>
+                          <input
+                            type="text"
+                            className="form-input"
+                            placeholder="e.g. 7c32e189a456... or public voice reference name"
+                            value={newBizCustomVoiceId}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setNewBizCustomVoiceId(val);
+                              setNewBiz((prev) => ({
+                                ...prev,
+                                voice_id: val.trim() || 'fish_audio_default',
+                                voice_name: val.trim() ? `Public Voice (${val.trim()})` : 'Fish Audio Default'
+                              }));
+                            }}
+                          />
+                          <small style={{ color: '#64748b', fontSize: 11.5, marginTop: 5, display: 'block' }}>
+                            Paste the ID or reference tag from the Fish Audio public voice model directory. You can switch back to Fish Audio Default at any time.
+                          </small>
+                        </div>
+                      ) : (
+                        <div className="voice-profile-callout">
+                          <Bot size={16} color="#2563eb" style={{ flexShrink: 0 }} />
+                          <span style={{ fontSize: 12 }}>
+                            <strong>Fish Audio Default is active.</strong> You can use standard speech synthesis now, and switch to any Fish Audio public voice profile anytime.
+                          </span>
+                        </div>
+                      )}
 
                       {/* INTERACTIVE ROUTER TOOLS CHECKBOXES */}
                       <div style={{ marginTop: 14 }}>
@@ -3292,8 +3385,12 @@ export default function BusinessesPage({ onOpenOnboarding }) {
             <form onSubmit={handleSaveEdit}>
               <div className="modal-body" style={{ padding: '24px', overflowY: 'auto', maxHeight: '65vh' }}>
                 {saveError && (
-                  <div className="notice error" style={{ marginBottom: 16 }}>
-                    {saveError}
+                  <div className="modal-alert-error" style={{ marginBottom: 18 }}>
+                    <AlertCircle size={18} style={{ flexShrink: 0, marginTop: 1 }} />
+                    <div style={{ flex: 1 }}>
+                      <strong style={{ display: 'block', fontSize: 13.5, marginBottom: 2 }}>Unable to Update Business</strong>
+                      <span style={{ fontSize: 13 }}>{saveError}</span>
+                    </div>
                   </div>
                 )}
 
@@ -3843,16 +3940,45 @@ export default function BusinessesPage({ onOpenOnboarding }) {
 
                       <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: 14, marginTop: 12 }}>
                         <div className="edit-field-group">
-                          <label>Voice Model Profile</label>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
+                            <label style={{ margin: 0 }}>Voice Model Profile</label>
+                            <span className="badge-voice-default">Fish Audio</span>
+                          </div>
                           <select
                             className="form-select"
-                            value={editingBiz.voice || 'Serena - Executive English'}
-                            onChange={(e) => setEditingBiz({ ...editingBiz, voice: e.target.value })}
+                            value={editBizCustomVoice ? 'custom_public' : (editingBiz.voice_id || 'fish_audio_default')}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val === 'custom_public') {
+                                setEditBizCustomVoice(true);
+                                setEditingBiz((prev) => ({
+                                  ...prev,
+                                  voice_id: editBizCustomVoiceId.trim() || 'fish_audio_default',
+                                  voice: editBizCustomVoiceId.trim() ? `Public Voice (${editBizCustomVoiceId.trim()})` : 'Custom Public Voice'
+                                }));
+                              } else {
+                                setEditBizCustomVoice(false);
+                                const profile = VOICE_PROFILES.find((p) => p.id === val);
+                                setEditingBiz((prev) => ({
+                                  ...prev,
+                                  voice_id: val,
+                                  voice: profile ? profile.name : 'Fish Audio Default'
+                                }));
+                              }
+                            }}
                           >
-                            <option value="Serena - Executive English">Serena - Executive English</option>
-                            <option value="Marcus - Conversational English">Marcus - Conversational English</option>
-                            <option value="Sophia - Warm Healthcare English">Sophia - Warm Healthcare English</option>
-                            <option value="Ravi - Warm & Professional">Ravi - Warm & Professional</option>
+                            <optgroup label="Default (Standard)">
+                              <option value="fish_audio_default">Fish Audio Default (System Standard)</option>
+                            </optgroup>
+                            <optgroup label="Curated Fish Audio Voices">
+                              <option value="serena_exec_en">Fish Audio - Serena (Executive English)</option>
+                              <option value="marcus_conv_en">Fish Audio - Marcus (Conversational English)</option>
+                              <option value="sophia_care_en">Fish Audio - Sophia (Warm Healthcare English)</option>
+                              <option value="ravi_finance_te_en">Fish Audio - Ravi (Professional Multilingual)</option>
+                            </optgroup>
+                            <optgroup label="Public / Custom Voice Models">
+                              <option value="custom_public">Public / Custom Voice Model ID...</option>
+                            </optgroup>
                           </select>
                         </div>
 
@@ -3880,6 +4006,40 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                           />
                         </div>
                       </div>
+
+                      {/* PUBLIC VOICE MODEL INPUT OR DEFAULT CALLOUT */}
+                      {editBizCustomVoice ? (
+                        <div style={{ marginTop: 12, padding: '12px 16px', background: '#f8fafc', border: '1.5px solid #cbd5e1', borderRadius: 10 }}>
+                          <label style={{ fontSize: 12, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 5 }}>
+                            Fish Audio Public Voice ID / Reference
+                          </label>
+                          <input
+                            type="text"
+                            className="form-input"
+                            placeholder="e.g. 7c32e189a456... or public voice reference name"
+                            value={editBizCustomVoiceId}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setEditBizCustomVoiceId(val);
+                              setEditingBiz((prev) => ({
+                                ...prev,
+                                voice_id: val.trim() || 'fish_audio_default',
+                                voice: val.trim() ? `Public Voice (${val.trim()})` : 'Fish Audio Default'
+                              }));
+                            }}
+                          />
+                          <small style={{ color: '#64748b', fontSize: 11.5, marginTop: 5, display: 'block' }}>
+                            Paste the ID or reference tag from the Fish Audio public voice model directory. You can switch back to Fish Audio Default at any time.
+                          </small>
+                        </div>
+                      ) : (
+                        <div className="voice-profile-callout">
+                          <Bot size={16} color="#2563eb" style={{ flexShrink: 0 }} />
+                          <span style={{ fontSize: 12 }}>
+                            <strong>Fish Audio Default is active.</strong> Standard neural voice synthesis configured. You can switch to any Fish Audio public voice profile anytime.
+                          </span>
+                        </div>
+                      )}
 
                       {/* INTERACTIVE ROUTER TOOLS CHECKBOXES */}
                       {(() => {

@@ -272,8 +272,8 @@ async def create_business(payload: BusinessCreatePayload):
         
         agent_name = (payload.agent_name or f"{biz_name} AI Specialist").strip()
         role = template.get("default_agent_role") or template.get("role") or "Appointment & Consultation Specialist"
-        voice_id = payload.voice_id or template.get("default_voice_id", "serena_exec_en")
-        voice_name = payload.voice_name or template.get("default_voice_name", "Serena - Executive English")
+        voice_id = payload.voice_id or template.get("default_voice_id", "fish_audio_default")
+        voice_name = payload.voice_name or template.get("default_voice_name", "Fish Audio Default")
         language = payload.language or template.get("default_language", "en")
         tools = payload.attached_tools if (payload.attached_tools is not None and len(payload.attached_tools) > 0) else template.get("tools", [])
         
