@@ -587,6 +587,28 @@ async def complete_onboarding_and_create_agent(payload: OnboardingCompletePayloa
     }
     saved_agent = data_store.add_agent(agent_record)
 
+    # Persist catalogue services to Supabase if configured
+    if services_data and biz_id:
+        try:
+            from backend.core.supabase import supabase
+            for s in services_data:
+                s_name = (s.get("service_name") or s.get("name") or "").strip()
+                if s_name:
+                    s_price = s.get("price")
+                    s_dur = s.get("duration_minutes")
+                    s_desc = (s.get("description") or s.get("short_description") or "").strip()
+                    supabase.table("services").insert({
+                        "business_id": biz_id,
+                        "service_name": s_name,
+                        "short_description": s_desc,
+                        "detailed_description": s_desc,
+                        "price": float(s_price) if s_price is not None and str(s_price).strip() != "" else None,
+                        "duration_minutes": int(s_dur) if s_dur is not None and str(s_dur).strip() != "" else None,
+                        "active": True
+                    }).execute()
+        except Exception as e:
+            logger.debug(f"Catalogue services table sync: {e}")
+
     return {
         "success": True,
         "status": "Local Saved",
