@@ -37,6 +37,10 @@ export async function apiFetch(endpoint, options = {}) {
   }
 
   if (res.status === 204) return null;
+  const contentType = res.headers.get("content-type") || "";
+  if (!contentType.includes("application/json")) {
+    throw new Error(`Expected JSON response from server but received ${contentType || 'non-JSON'}`);
+  }
   return res.json();
 }
 
