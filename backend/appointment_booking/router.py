@@ -1,5 +1,7 @@
 import logging
 import uuid
+import re
+from datetime import datetime
 from typing import Any, Dict, List
 from fastapi import APIRouter, HTTPException, status
 from backend.core.supabase import supabase
@@ -72,10 +74,110 @@ def get_business(business_id: str):
     raise Exception(f"Business '{business_id}' was not found or is inactive.")
 
 
-def generate_appointment_id() -> str:
-    """Generate a short, human-readable appointment reference."""
-    short = uuid.uuid4().hex[:8].upper()
-    return f"APT-{short}"
+def get_business_code(business_name: str, business_id: Any = None) -> str:
+    """
+    Extract a unique 3-letter uppercase code for a business.
+    Default is first 3 letters (e.g. 'Scadova' -> 'SCA').
+    If another business already uses those first 3 letters, extracts alternative
+    unique letters from the name (e.g. last 3 letters 'OVA', or other unique substrings).
+    """
+    cleaned = re.sub(r'[^A-Za-z]', '', business_name or "").upper()
+    if len(cleaned) < 3:
+        cleaned = (cleaned + "SCADOVA")[:3]
+
+    # Generate ordered candidate 3-letter codes
+    candidates = [cleaned[:3]]
+    c2 = cleaned[-3:]
+    if c2 not in candidates:
+        candidates.append(c2)
+
+    for i in range(len(cleaned) - 3, 0, -1):
+        s = cleaned[i:i+3]
+        if len(s) == 3 and s not in candidates:
+            candidates.append(s)
+
+    for i in range(1, len(cleaned) - 2):
+        s = cleaned[i:i+3]
+        if len(s) == 3 and s not in candidates:
+            candidates.append(s)
+
+    claimed = set()
+    try:
+        all_businesses = data_store.list_businesses()
+        for b in all_businesses:
+            b_id = b.get("id")
+            if business_id is not None and str(b_id) == str(business_id):
+                continue
+            other_clean = re.sub(r'[^A-Za-z]', '', b.get("name", "")).upper()
+            if len(other_clean) >= 3:
+                if business_id is None or (b_id is not None and str(b_id) < str(business_id)):
+                    claimed.add(other_clean[:3])
+    except Exception as e:
+        logger.debug(f"Business prefix collision check notice: {e}")
+
+    try:
+        for apt in data_store.list_appointments():
+            apt_biz_id = apt.get("business_id")
+            if business_id is not None and apt_biz_id is not None and str(apt_biz_id) != str(business_id):
+                apt_id = str(apt.get("appointment_id") or "")
+                if len(apt_id) >= 3 and apt_id[:3].isalpha():
+                    claimed.add(apt_id[:3].upper())
+    except Exception:
+        pass
+
+    for cand in candidates:
+        if cand not in claimed:
+            return cand
+    return candidates[0]
+
+
+def generate_appointment_id(business_name: str = "Scadova", business_id: Any = None) -> str:
+    """
+    Generate an appointment reference using 3-letter business code + YYMDD + 2-digit sequence counter.
+    Example: Scadova -> SCAYYMDD01 (or OVAYYMDD01 if SCA is already claimed by another business).
+    """
+    now = datetime.now()
+    biz_code = get_business_code(business_name=business_name, business_id=business_id)
+
+    prefix = f"{biz_code}{now.strftime('%y')}{now.month}{now.strftime('%d')}"
+
+    existing_count = 0
+    max_seq = 0
+
+    try:
+        result = (
+            supabase
+            .table("appointments")
+            .select("appointment_id")
+            .like("appointment_id", f"{prefix}%")
+            .execute()
+        )
+        existing = result.data or []
+        existing_count = len(existing)
+        for item in existing:
+            apt_ref = str(item.get("appointment_id") or "")
+            suffix = apt_ref[len(prefix):]
+            if suffix.isdigit():
+                max_seq = max(max_seq, int(suffix))
+    except Exception as e:
+        logger.debug(f"Supabase appointment prefix check notice: {e}")
+
+    try:
+        local_existing = [
+            a for a in data_store.list_appointments()
+            if str(a.get("appointment_id") or "").startswith(prefix)
+        ]
+        existing_count = max(existing_count, len(local_existing))
+        for item in local_existing:
+            apt_ref = str(item.get("appointment_id") or "")
+            suffix = apt_ref[len(prefix):]
+            if suffix.isdigit():
+                max_seq = max(max_seq, int(suffix))
+    except Exception:
+        pass
+
+    sequence = max(existing_count + 1, max_seq + 1)
+    return f"{prefix}{sequence:02d}"
 
 
 # ============================================================
@@ -342,7 +444,10 @@ async def create_appointment(request: AppointmentCreate):
     """
     try:
         business = get_business(request.business_id)
-        appointment_id = generate_appointment_id()
+        appointment_id = generate_appointment_id(
+            business_name=business.get("name") or "Scadova",
+            business_id=business.get("id")
+        )
 
         service_id = request.service_id or 1
         service_name = request.service_name or "Consultation Appointment"
