@@ -26,7 +26,10 @@ import {
   Wand2,
   Code2,
   RotateCcw,
-  AlertCircle
+  AlertCircle,
+  Lock,
+  Unlock,
+  CheckCircle
 } from 'lucide-react';
 import { apiFetch } from '../api';
 
@@ -2286,7 +2289,7 @@ export default function BusinessesPage({ onOpenOnboarding }) {
       {/* ============================================================ */}
       {addModalOpen && (
         <div className="modal-overlay">
-          <div className="edit-dialog" style={{ width: 'min(920px, 95vw)', maxWidth: 920 }} role="dialog" aria-modal="true">
+          <div className="edit-dialog" style={{ width: 'min(920px, 95vw)', maxWidth: 920, height: 'min(88vh, 820px)' }} role="dialog" aria-modal="true">
             <div className="modal-header" style={{ padding: '20px 24px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <div style={{ 
@@ -2343,14 +2346,20 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                 type="button"
                 className={`edit-tab-btn ${addTab === 'agent' ? 'active' : ''}`}
                 onClick={() => setAddTab('agent')}
+                style={!newBiz.setup_agent_now ? { color: '#64748b' } : {}}
               >
-                <Bot size={15} />
+                {newBiz.setup_agent_now ? <Bot size={15} /> : <Lock size={14} color="#64748b" />}
                 <span>4. AI Voice Agent & Fish Audio Prompt</span>
+                {newBiz.setup_agent_now ? (
+                  <span className="badge badge-green" style={{ fontSize: 9.5, padding: '1px 5px', marginLeft: 4 }}>Live</span>
+                ) : (
+                  <span className="badge badge-gray" style={{ fontSize: 9.5, padding: '1px 5px', marginLeft: 4 }}>Locked</span>
+                )}
               </button>
             </div>
 
-            <form onSubmit={handleCreateBusiness}>
-              <div className="modal-body" style={{ padding: '24px', overflowY: 'auto', maxHeight: '65vh' }}>
+            <form onSubmit={handleCreateBusiness} style={{ display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 0, height: '100%', overflow: 'hidden' }}>
+              <div className="modal-body" style={{ padding: '24px', overflowY: 'auto', flex: '1 1 auto', minHeight: 0 }}>
                 {createError && (
                   <div className="modal-alert-error" style={{ marginBottom: 18 }}>
                     <AlertCircle size={18} style={{ flexShrink: 0, marginTop: 1 }} />
@@ -2521,13 +2530,15 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                     </div>
 
                     {/* SETUP VOICE AGENT CHOICE CARD */}
-                    <div className="edit-section-card" style={{ border: '1.5px solid #dbeafe', background: '#f8fafc' }}>
+                    <div className="edit-section-card" style={{ border: newBiz.setup_agent_now ? '1.5px solid #bfdbfe' : '1.5px solid #cbd5e1', background: '#f8fafc' }}>
                       <div className="edit-section-header">
                         <h4>
-                          <Bot size={16} color="#2563eb" />
+                          <Bot size={16} color={newBiz.setup_agent_now ? '#2563eb' : '#64748b'} />
                           AI Voice Agent Setup
                         </h4>
-                        <span className="badge badge-blue">Fish Audio Integration</span>
+                        <span className={`badge ${newBiz.setup_agent_now ? 'badge-blue' : 'badge-gray'}`}>
+                          {newBiz.setup_agent_now ? 'Fish Audio Live' : 'Agent Skipped'}
+                        </span>
                       </div>
                       <p style={{ fontSize: 12.5, color: '#475569', margin: '4px 0 12px 0', lineHeight: 1.4 }}>
                         Configure the automated AI voice agent right now with live Fish Audio voices and router tools, or register the business first and set up the agent later.
@@ -2536,7 +2547,7 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                       <div className="setup-choice-grid">
                         <div
                           className={`setup-choice-card ${newBiz.setup_agent_now ? 'selected' : ''}`}
-                          onClick={() => setNewBiz((prev) => ({ ...prev, setup_agent_now: true }))}
+                          onClick={() => setNewBiz((prev) => ({ ...prev, setup_agent_now: true, auto_create_agent: true }))}
                         >
                           <div className="setup-choice-radio">
                             {newBiz.setup_agent_now && <div className="setup-choice-radio-inner" />}
@@ -2556,21 +2567,61 @@ export default function BusinessesPage({ onOpenOnboarding }) {
 
                         <div
                           className={`setup-choice-card ${!newBiz.setup_agent_now ? 'selected' : ''}`}
-                          onClick={() => setNewBiz((prev) => ({ ...prev, setup_agent_now: false }))}
+                          onClick={() => {
+                            setNewBiz((prev) => ({ ...prev, setup_agent_now: false, auto_create_agent: false }));
+                            if (addTab === 'agent') setAddTab('business');
+                          }}
                         >
                           <div className="setup-choice-radio">
                             {!newBiz.setup_agent_now && <div className="setup-choice-radio-inner" />}
                           </div>
                           <div style={{ flex: 1 }}>
-                            <span style={{ fontWeight: 700, fontSize: 13, color: '#0f172a' }}>
-                              Set up Voice Agent later
-                            </span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ fontWeight: 700, fontSize: 13, color: '#0f172a' }}>
+                                Set up Voice Agent later
+                              </span>
+                              <span className="badge badge-gray" style={{ fontSize: 10, padding: '1px 6px' }}>Tab 4 Locked</span>
+                            </div>
                             <p style={{ fontSize: 11.5, color: '#64748b', margin: '4px 0 0 0', lineHeight: 1.4 }}>
                               Save business details immediately without provisioning a voice agent. You can configure the agent anytime in the Edit menu.
                             </p>
                           </div>
                         </div>
                       </div>
+
+                      {/* DYNAMIC SELECTION FEEDBACK BANNER */}
+                      {newBiz.setup_agent_now ? (
+                        <div style={{ marginTop: 12, padding: '10px 14px', background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: '#065f46' }}>
+                            <CheckCircle size={16} color="#059669" style={{ flexShrink: 0 }} />
+                            <span><strong>Tab 4 is Unlocked:</strong> AI Voice Agent will be created in Fish Audio with {currentTemplate.tools?.length || 8} webhook tools.</span>
+                          </div>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => setAddTab('agent')}
+                            style={{ fontSize: 11, padding: '3px 10px', background: '#ffffff', color: '#047857', borderColor: '#6ee7b7', flexShrink: 0 }}
+                          >
+                            Go to Tab 4 →
+                          </button>
+                        </div>
+                      ) : (
+                        <div style={{ marginTop: 12, padding: '10px 14px', background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: '#475569' }}>
+                            <Lock size={16} color="#64748b" style={{ flexShrink: 0 }} />
+                            <span><strong>Tab 4 is Locked:</strong> Business will be registered immediately without creating an AI voice agent.</span>
+                          </div>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => setNewBiz(prev => ({ ...prev, setup_agent_now: true, auto_create_agent: true }))}
+                            style={{ fontSize: 11, padding: '3px 10px', background: '#ffffff', color: '#2563eb', borderColor: '#bfdbfe', flexShrink: 0 }}
+                          >
+                            <Unlock size={12} />
+                            <span>Unlock</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -2914,6 +2965,37 @@ export default function BusinessesPage({ onOpenOnboarding }) {
 
                 {/* TAB 4: AI VOICE AGENT & FISH AUDIO PROMPT */}
                 {addTab === 'agent' && (
+                  !newBiz.setup_agent_now ? (
+                    <div style={{ padding: '48px 24px', textAlign: 'center', background: '#f8fafc', border: '1.5px dashed #cbd5e1', borderRadius: 12 }}>
+                      <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px auto', color: '#64748b' }}>
+                        <Lock size={28} />
+                      </div>
+                      <h4 style={{ margin: '0 0 8px 0', fontSize: 17, fontWeight: 700, color: '#0f172a' }}>
+                        AI Voice Agent Setup is Locked
+                      </h4>
+                      <p style={{ color: '#64748b', fontSize: 13, maxWidth: 480, margin: '0 auto 20px auto', lineHeight: 1.5 }}>
+                        You selected <strong>"Set up Voice Agent later"</strong> in Step 1. The business will be registered without provisioning an agent in Fish Audio.
+                      </p>
+                      <div style={{ display: 'flex', justifyContent: 'center', gap: 10 }}>
+                        <button
+                          type="button"
+                          className="btn btn-primary"
+                          onClick={() => setNewBiz(prev => ({ ...prev, setup_agent_now: true, auto_create_agent: true }))}
+                          style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                        >
+                          <Unlock size={15} />
+                          <span>Unlock & Configure Voice Agent Now</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          onClick={() => setAddTab('business')}
+                        >
+                          ← Back to Step 1
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
                     <div className="edit-section-card">
                       <div className="edit-section-header">
@@ -3173,11 +3255,27 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                       </div>
                     </div>
                   </div>
-                )}
-              </div>
+                )
+              )}
+            </div>
 
-              {/* MODAL FOOTER */}
-              <div className="modal-footer" style={{ padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', borderTop: '1px solid #e2e8f0' }}>
+              {/* LOCKED MODAL FOOTER - GUARANTEED VISIBLE ACROSS ALL VIEWPORTS */}
+              <div 
+                className="modal-footer" 
+                style={{ 
+                  padding: '16px 24px', 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center', 
+                  background: '#f8fafc', 
+                  borderTop: '1.5px solid #e2e8f0',
+                  flexShrink: 0,
+                  position: 'sticky',
+                  bottom: 0,
+                  zIndex: 30,
+                  boxShadow: '0 -4px 14px rgba(0, 0, 0, 0.05)'
+                }}
+              >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <button
                     type="button"
@@ -3251,7 +3349,7 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                           type="submit"
                           className="btn btn-primary"
                           disabled={creating}
-                          style={{ minWidth: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                          style={{ minWidth: 220, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
                         >
                           {creating ? (
                             <>
@@ -3261,7 +3359,7 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                           ) : (
                             <>
                               <Check size={16} />
-                              <span>Create Business (Skip Voice Agent)</span>
+                              <span>Create Business (Voice Agent Later)</span>
                             </>
                           )}
                         </button>
@@ -3278,24 +3376,45 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                       >
                         ← Back to Services
                       </button>
-                      <button
-                        type="submit"
-                        className="btn btn-primary"
-                        disabled={creating}
-                        style={{ minWidth: 220, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
-                      >
-                        {creating ? (
-                          <>
-                            <span className="spin">⟳</span>
-                            <span>Provisioning Agent...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Sparkles size={16} />
-                            <span>Create Business & Voice Agent</span>
-                          </>
-                        )}
-                      </button>
+                      {newBiz.setup_agent_now ? (
+                        <button
+                          type="submit"
+                          className="btn btn-primary"
+                          disabled={creating}
+                          style={{ minWidth: 230, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                        >
+                          {creating ? (
+                            <>
+                              <span className="spin">⟳</span>
+                              <span>Provisioning Live Agent...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles size={16} />
+                              <span>Create Business & Live Agent</span>
+                            </>
+                          )}
+                        </button>
+                      ) : (
+                        <button
+                          type="submit"
+                          className="btn btn-primary"
+                          disabled={creating}
+                          style={{ minWidth: 220, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                        >
+                          {creating ? (
+                            <>
+                              <span className="spin">⟳</span>
+                              <span>Registering Business...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Check size={16} />
+                              <span>Create Business (Voice Agent Later)</span>
+                            </>
+                          )}
+                        </button>
+                      )}
                     </>
                   )}
                 </div>
@@ -3310,7 +3429,7 @@ export default function BusinessesPage({ onOpenOnboarding }) {
       {/* ============================================================ */}
       {editingBiz && (
         <div className="modal-overlay">
-          <div className="edit-dialog" style={{ width: 'min(920px, 95vw)', maxWidth: 920 }} role="dialog" aria-modal="true">
+          <div className="edit-dialog" style={{ width: 'min(920px, 95vw)', maxWidth: 920, height: 'min(88vh, 820px)' }} role="dialog" aria-modal="true">
             <div className="modal-header" style={{ padding: '20px 24px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <div style={{ 
@@ -3382,8 +3501,8 @@ export default function BusinessesPage({ onOpenOnboarding }) {
               </button>
             </div>
 
-            <form onSubmit={handleSaveEdit}>
-              <div className="modal-body" style={{ padding: '24px', overflowY: 'auto', maxHeight: '65vh' }}>
+            <form onSubmit={handleSaveEdit} style={{ display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 0, height: '100%', overflow: 'hidden' }}>
+              <div className="modal-body" style={{ padding: '24px', overflowY: 'auto', flex: '1 1 auto', minHeight: 0 }}>
                 {saveError && (
                   <div className="modal-alert-error" style={{ marginBottom: 18 }}>
                     <AlertCircle size={18} style={{ flexShrink: 0, marginTop: 1 }} />
@@ -4188,7 +4307,23 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                 )}
               </div>
 
-              <div className="modal-footer" style={{ padding: '16px 24px', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              {/* LOCKED MODAL FOOTER */}
+              <div 
+                className="modal-footer" 
+                style={{ 
+                  padding: '16px 24px', 
+                  display: 'flex', 
+                  justifyContent: 'flex-end', 
+                  gap: 10, 
+                  background: '#f8fafc', 
+                  borderTop: '1.5px solid #e2e8f0',
+                  flexShrink: 0,
+                  position: 'sticky',
+                  bottom: 0,
+                  zIndex: 30,
+                  boxShadow: '0 -4px 14px rgba(0, 0, 0, 0.05)'
+                }}
+              >
                 <button
                   type="button"
                   className="btn btn-secondary"
