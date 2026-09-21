@@ -699,12 +699,37 @@ class LiveDataStore:
         return agents
 
     def add_agent(self, agent: Dict[str, Any]) -> Dict[str, Any]:
-        """Save and register a new voice agent in data store."""
+        """Save and register a new voice agent in data store and Supabase."""
         a = copy.deepcopy(agent)
         a["id"] = a.get("id") or (len(self.cached_agents) + 100)
         a.setdefault("created_at", _now_iso())
         a.setdefault("last_synced", _now_iso())
         a.setdefault("status", "active")
+
+        # Persist to Supabase agents table if connected
+        try:
+            supabase_agent = {
+                "business_id": a.get("business_id"),
+                "name": a.get("name", "Voice Agent"),
+                "role": a.get("role", "Appointment Specialist"),
+                "fish_agent_id": a.get("fish_agent_id"),
+                "voice_id": a.get("voice_id"),
+                "voice_name": a.get("voice_name"),
+                "language": a.get("language", "en"),
+                "llm_provider": a.get("llm_provider", "Scadova Runtime"),
+                "llm_model": a.get("llm_model", "scadova-routing-v1"),
+                "first_message": a.get("first_message"),
+                "prompt_version_id": a.get("prompt_version_id"),
+                "attached_tools": a.get("attached_tools", []),
+                "status": a.get("status", "active"),
+            }
+            supabase_agent = {k: v for k, v in supabase_agent.items() if v is not None}
+            res = supabase.table("agents").insert(supabase_agent).execute()
+            if res.data:
+                a["id"] = res.data[0]["id"]
+        except Exception as e:
+            logger.error(f"Error inserting into Supabase agents: {e}")
+
         self.cached_agents.append(a)
         self.persist_usage()
         return a
@@ -1001,6 +1026,25 @@ class LiveDataStore:
         p.setdefault("version_number", len(self.saved_prompt_versions) + 3)
         p.setdefault("version_label", f"v1.{len(self.saved_prompt_versions) + 3}")
         p.setdefault("created_at", _now_iso())
+
+        # Persist to Supabase prompt_versions table if connected
+        try:
+            supabase_pv = {
+                "business_id": p.get("business_id"),
+                "agent_id": p.get("agent_id"),
+                "version_number": p.get("version_number", 1),
+                "prompt_text": p.get("prompt_text", ""),
+                "changed_fields": p.get("changed_fields"),
+                "is_published": p.get("is_published", True),
+                "created_by": p.get("created_by", "Admin"),
+            }
+            supabase_pv = {k: v for k, v in supabase_pv.items() if v is not None}
+            res = supabase.table("prompt_versions").insert(supabase_pv).execute()
+            if res.data:
+                p["id"] = res.data[0]["id"]
+        except Exception as e:
+            logger.error(f"Error inserting into Supabase prompt_versions: {e}")
+
         self.saved_prompt_versions.append(p)
         return p
 

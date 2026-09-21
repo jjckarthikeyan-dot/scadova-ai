@@ -12,6 +12,13 @@ from pydantic import BaseModel, Field
 
 from backend.admin.store import data_store, _now_iso
 from backend.core.prompt_builder import get_router_tools_for_business_type
+from backend.admin.industry_prompts import (
+    get_industry_template,
+    render_prompt,
+    render_greeting,
+    list_industry_templates,
+    update_industry_template,
+)
 
 logger = logging.getLogger("admin_routes")
 
@@ -37,6 +44,13 @@ class BusinessCreatePayload(BaseModel):
     address: Optional[str] = ""
     description: Optional[str] = ""
     logo_url: Optional[str] = ""
+    agent_name: Optional[str] = None
+    voice_id: Optional[str] = None
+    voice_name: Optional[str] = None
+    language: Optional[str] = "en"
+    system_prompt: Optional[str] = None
+    first_message: Optional[str] = None
+    auto_create_agent: bool = True
 
 
 class BusinessUpdatePayload(BaseModel):
@@ -197,9 +211,136 @@ async def list_businesses():
 
 @router.post("/businesses", status_code=status.HTTP_201_CREATED)
 async def create_business(payload: BusinessCreatePayload):
-    """Register a new business."""
-    biz = data_store.add_business(payload.model_dump())
+    """Register a new business and auto-provision its Voice Agent with industry prompt ready for Fish Audio."""
+    data = payload.model_dump()
+    biz = data_store.add_business(data)
+    
+    if payload.auto_create_agent:
+        biz_id = biz.get("id")
+        b_key = biz.get("business_key") or f"biz_{biz_id}"
+        biz_name = biz.get("name", "Business")
+        
+        # Resolve industry template
+        industry_input = payload.industry or payload.type
+        template = get_industry_template(industry_input)
+        
+        agent_name = (payload.agent_name or f"{biz_name} AI Specialist").strip()
+        voice_id = payload.voice_id or template.get("default_voice_id", "serena_exec_en")
+        voice_name = payload.voice_name or template.get("default_voice_name", "Serena - Executive English")
+        language = payload.language or template.get("default_language", "en")
+        role = template.get("default_agent_role", "Appointment & Consultation Specialist")
+        tools = template.get("tools", [])
+        
+        # Render system prompt and greeting (or use customized ones provided in the payload)
+        system_prompt = (
+            payload.system_prompt.strip()
+            if payload.system_prompt and payload.system_prompt.strip()
+            else render_prompt(
+                template["system_prompt"],
+                business_name=biz_name,
+                agent_name=agent_name,
+                business_key=b_key,
+            )
+        )
+        first_message = (
+            payload.first_message.strip()
+            if payload.first_message and payload.first_message.strip()
+            else render_greeting(
+                template["greeting"],
+                business_name=biz_name,
+                agent_name=agent_name,
+            )
+        )
+        
+        # Save prompt version to store & Supabase
+        prompt_rec = data_store.add_prompt_version({
+            "business_id": biz_id,
+            "version_number": 1,
+            "version_label": "v1.0",
+            "prompt_text": system_prompt,
+            "changed_fields": {"auto_generated": True, "industry": template["key"]},
+            "is_published": True,
+            "created_by": "System Auto-Provisioner",
+        })
+        
+        # Dedicated runtime agent ID formatted for Fish Audio
+        clean_key = b_key.lower().replace("-", "_")
+        fish_agent_id = f"agent_{clean_key[:22]}"
+        
+        agent_record = {
+            "business_id": biz_id,
+            "business_name": biz_name,
+            "business_type": biz.get("type", "service_and_appointment"),
+            "name": agent_name,
+            "role": role,
+            "fish_agent_id": fish_agent_id,
+            "agent_id": fish_agent_id,
+            "voice_id": voice_id,
+            "voice_name": voice_name,
+            "language": language,
+            "llm_provider": "Scadova Runtime",
+            "llm_model": "scadova-routing-v1",
+            "first_message": first_message,
+            "system_prompt": system_prompt,
+            "prompt_version_id": prompt_rec.get("id"),
+            "prompt_version": "v1.0",
+            "attached_tools": tools,
+            "status": "active",
+        }
+        saved_agent = data_store.add_agent(agent_record)
+        
+        # Update business with mapped agent details
+        updates = {
+            "agent_id": fish_agent_id,
+            "fish_agent_id": fish_agent_id,
+            "agent_name": agent_name,
+            "voice": voice_name,
+            "voice_id": voice_id,
+            "language": language,
+            "prompt_version": "v1.0",
+            "first_message": first_message,
+            "system_prompt": system_prompt,
+            "status": "active",
+        }
+        data_store.update_business(biz_id, updates)
+        biz.update(updates)
+        
+        # Initialize default Fish Audio credit tracking & knowledge base
+        data_store._default_credit_settings(saved_agent)
+        data_store.set_provider_knowledge(fish_agent_id, {
+            "agent_id": fish_agent_id,
+            "business_name": biz_name,
+            "profile": {
+                "description": biz.get("description") or f"Enterprise Voice Agent for {biz_name}",
+                "hours": "Configured operating hours",
+                "policies": "Appointments require verified customer details and backend tool execution.",
+            },
+            "extra_markdown": f"# Live System Prompt for {biz_name}\n\n{system_prompt}",
+        })
+        
+        biz["agent"] = saved_agent
+        biz["prompt_version"] = prompt_rec
+        
     return biz
+
+
+@router.get("/industry-templates")
+async def get_industry_templates():
+    """List all pre-defined industry templates with system prompts and greetings."""
+    return {"success": True, "templates": list_industry_templates()}
+
+
+@router.put("/industry-templates/{industry_key}")
+async def update_industry_template_endpoint(industry_key: str, payload: Dict[str, Any]):
+    """Update system prompt or greeting template for an industry."""
+    updated = update_industry_template(
+        industry_key,
+        system_prompt=payload.get("system_prompt"),
+        greeting=payload.get("greeting"),
+    )
+    if not updated:
+        raise HTTPException(404, "Industry template not found")
+    return {"success": True, "template": updated}
 
 
 @router.get("/businesses/{business_id}")
