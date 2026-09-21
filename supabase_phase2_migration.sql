@@ -286,3 +286,93 @@ BEGIN
     END LOOP;
 END;
 $$;
+
+-- ============================================================
+-- 13. Seed Data for Scadova (Services, Hours, Agent & Appointment)
+-- ============================================================
+DO $$
+DECLARE
+    scadova_id INTEGER;
+    service_id_1 INTEGER;
+BEGIN
+    -- Resolve Scadova business ID
+    SELECT id INTO scadova_id FROM businesses WHERE name ILIKE '%Scadova%' LIMIT 1;
+
+    IF scadova_id IS NOT NULL THEN
+        -- Update business details
+        UPDATE businesses SET
+            business_type = 'service_and_appointment',
+            industry = 'Healthcare & Specialized Consultation',
+            country = 'United States',
+            address = 'United States',
+            phone = '205-413-2030',
+            email = 'contact@scadova.ai',
+            website = 'https://scadova.ai',
+            description = 'Specialized consultation and appointment booking service powered by Scadova AI.',
+            fish_agent_id = 'agent_scadova-'
+        WHERE id = scadova_id;
+
+        -- Insert Services if not already present
+        IF NOT EXISTS (SELECT 1 FROM services WHERE business_id = scadova_id) THEN
+            INSERT INTO services (business_id, service_name, short_description, detailed_description, price, duration_minutes, active)
+            VALUES 
+                (scadova_id, 'Initial Consultation & Strategy', 'Comprehensive initial consultation to assess requirements.', 'One-on-one session with a certified specialist including full discovery, requirements review, and tailored roadmap.', 75.00, 45, true),
+                (scadova_id, 'Standard Service Session', 'Standard service appointment tailored to client requirements.', 'Hands-on execution and consultative session covering primary deliverables and advisory.', 120.00, 60, true),
+                (scadova_id, 'Follow-Up & Review Appointment', 'Progress check, adjustment, and follow-up consultation.', 'Follow-up review session analyzing implementation milestones, answering questions, and next steps.', 45.00, 30, true);
+        END IF;
+
+        -- Insert Business Hours if not already present
+        IF NOT EXISTS (SELECT 1 FROM business_hours WHERE business_id = scadova_id) THEN
+            INSERT INTO business_hours (business_id, day, open_time, close_time, closed)
+            VALUES 
+                (scadova_id, 'monday', '09:00', '18:00', false),
+                (scadova_id, 'tuesday', '09:00', '18:00', false),
+                (scadova_id, 'wednesday', '09:00', '18:00', false),
+                (scadova_id, 'thursday', '09:00', '18:00', false),
+                (scadova_id, 'friday', '09:00', '18:00', false),
+                (scadova_id, 'saturday', '10:00', '16:00', false),
+                (scadova_id, 'sunday', NULL, NULL, true);
+        END IF;
+
+        -- Insert Agent if not already present
+        IF NOT EXISTS (SELECT 1 FROM agents WHERE business_id = scadova_id) THEN
+            INSERT INTO agents (business_id, name, role, fish_agent_id, voice_id, voice_name, language, llm_provider, llm_model, first_message, status)
+            VALUES (
+                scadova_id,
+                'Scadova Specialist AI',
+                'Appointment & Consultation Specialist',
+                'agent_scadova-',
+                'scadova_voice_en_neutral',
+                'Marcus - Conversational English',
+                'en',
+                'Scadova',
+                'scadova-routing-v1',
+                'Hello! Thank you for contacting Scadova. I am your appointment specialist. How can I help schedule or review your service appointment today?',
+                'active'
+            );
+        END IF;
+
+        -- Insert initial sample appointment if not already present
+        SELECT id INTO service_id_1 FROM services WHERE business_id = scadova_id ORDER BY id LIMIT 1;
+        IF NOT EXISTS (SELECT 1 FROM appointments WHERE business_id = scadova_id) THEN
+            INSERT INTO appointments (appointment_id, business_id, service_id, service_name, customer_name, customer_phone, customer_email, appointment_date, appointment_time, duration_minutes, status, notes, source)
+            VALUES (
+                'SCA2692001',
+                scadova_id,
+                service_id_1,
+                'Initial Consultation & Strategy',
+                'Sarah Jenkins',
+                '+1 205-555-0199',
+                'sarah.jenkins@example.com',
+                CURRENT_DATE + INTERVAL '2 days',
+                '10:30',
+                45,
+                'CONFIRMED',
+                'Initial strategy and requirements consultation.',
+                'voice_agent'
+            );
+        END IF;
+    END IF;
+END;
+$$;
+
