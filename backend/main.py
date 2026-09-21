@@ -15,6 +15,8 @@ from restaurant.router import router as restaurant_router
 from clinic.router import router as clinic_router
 from backend.loan_agency.router import router as loan_agency_router
 from backend.loan_agency.sarvam_router import router as sarvam_router
+from backend.appointment_booking.router import router as appointment_booking_router
+from backend.admin.routes import router as admin_router
 
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -48,15 +50,22 @@ app.include_router(
 app.include_router(loan_agency_router)
 app.include_router(sarvam_router)
 
+# Service & Appointment Booking router
+app.include_router(appointment_booking_router)
+
+# Admin dashboard router
+app.include_router(admin_router)
+
 
 @app.get("/")
 def home():
     return {
         "status": "Scadova AI Backend running",
         "business_types": [
+            "service_and_appointment",
             "restaurant",
             "clinic",
-            "loan"
+            "loan_agency"
         ]
     }
 

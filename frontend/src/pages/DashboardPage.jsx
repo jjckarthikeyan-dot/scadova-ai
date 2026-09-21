@@ -1,0 +1,34 @@
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { Timer, Coins, PhoneCall, Gauge, ArrowUpRight, RefreshCw, AudioLines } from 'lucide-react';
+import { apiFetch } from '../api';
+const n = v => Number(v || 0);
+const fmt = v => n(v).toLocaleString(undefined, {maximumFractionDigits: 2});
+export default function DashboardPage() {
+  const [data, setData] = useState(null), [calls, setCalls] = useState([]), [agent, setAgent] = useState('all'), [error, setError] = useState(''), [busy, setBusy] = useState(false);
+  async function load() {
+    setBusy(true); setError('');
+    try { const [usage, logs] = await Promise.all([apiFetch('/admin/agent-usage'), apiFetch('/admin/call_logs')]); setData(usage); setCalls(logs); }
+    catch(e) { setError(e.message); } finally { setBusy(false); }
+  }
+  useEffect(() => { load(); const id = setInterval(load, 60000); window.addEventListener('scadova:updated', load); return () => { clearInterval(id); window.removeEventListener('scadova:updated',load); }; }, []);
+  const rows = (data?.agents || []).filter(a => agent === 'all' || a.agent_id === agent);
+  const filtered = calls.filter(c => agent === 'all' || c.agent_id === agent || c.fish_agent_id === agent);
+  const sum = key => rows.reduce((s,a) => s+n(a[key]),0);
+  const latency = filtered.filter(c => c.latency_ms != null && Number.isFinite(Number(c.latency_ms)));
+  const avgLatency = latency.length ? fmt(latency.reduce((s,c) => s+n(c.latency_ms),0)/latency.length)+' ms' : 'Not recorded';
+  const days = Array.from({length:14},(_,i) => {const d=new Date();d.setDate(d.getDate()-13+i);return d.toISOString().slice(0,10);});
+  const trend = days.map(day => filtered.filter(c => (c.start_time||'').slice(0,10)===day).reduce((s,c)=>s+n(c.actual_minutes),0));
+  const max = Math.max(1,...trend), points = trend.map((v,i)=>`${40+i*48},${180-v/max*135}`).join(' ');
+  const outcomes = Object.entries(filtered.reduce((o,c)=>{const k=(c.outcome||'Unknown').toLowerCase();o[k]=(o[k]||0)+1;return o;},{}));
+  const colors = ['#2563eb','#14b8a6','#f59e0b','#e879a2'];
+  let offset=0; const segments=outcomes.map(([key,value],i)=>{const start=offset;offset+=value/Math.max(1,filtered.length)*100;return `${colors[i%4]} ${start}% ${offset}%`;});
+  return <section className="dashboard-page">
+    <div className="dashboard-heading"><div><span className="eyebrow">VOICE OPERATIONS</span><h2>Every conversation, in focus.</h2><p>Minutes, credit balance and performance across your agents.</p></div><div className="dashboard-filters"><label>Agent<select className="form-select" value={agent} onChange={e=>setAgent(e.target.value)}><option value="all">All agents</option>{(data?.agents||[]).map(a=><option key={a.agent_id} value={a.agent_id}>{a.agent_name}</option>)}</select></label><button className="btn btn-secondary" disabled={busy} onClick={load} aria-label="Refresh dashboard"><RefreshCw size={17} className={busy?'spin':''}/></button></div></div>
+    {error && <div className="notice error" role="alert">Unable to refresh: {error}. Previously loaded data may be out of date.</div>}
+    <div className="metric-grid">{[[Timer,'Minutes used',fmt(sum('actual_minutes')),'All recorded calls'],[Coins,'Credits used',fmt(sum('credits_used')),'Scadova credit allocation'],[AudioLines,'Credits remaining',fmt(sum('remaining_balance')),'Available agent balance'],[Gauge,'Average latency',avgLatency,`${latency.length} measured calls`],[PhoneCall,'Recorded calls',fmt(filtered.length),'All-time call volume'],[Timer,'Average call duration',filtered.length ? fmt(filtered.reduce((s,c)=>s+n(c.duration_seconds),0)/filtered.length/60)+' min':'—','Conversation length']].map(([Icon,label,value,hint])=><article className="metric-card" key={label}><div className="metric-label"><span>{label}</span><Icon size={20}/></div><strong>{data?value:'—'}</strong><small>{hint}</small></article>)}</div>
+    <div className="chart-grid"><article className="card"><div className="card-header"><div><h3>Usage over time</h3><p className="card-subtitle">Daily conversation minutes · last 14 days · UTC</p></div><span className="badge badge-blue">{fmt(trend.reduce((a,b)=>a+b,0))} min</span></div><svg className="usage-chart" viewBox="0 0 700 220" role="img" aria-label={`Daily minutes for the last 14 days: ${trend.map(fmt).join(', ')}`}><defs><linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1"><stop stopColor="#3b82f6" stopOpacity=".2"/><stop offset="1" stopColor="#3b82f6" stopOpacity="0"/></linearGradient></defs>{[0,1,2,3].map(i=><g key={i}><line x1="40" x2="664" y1={180-i*45} y2={180-i*45} stroke="#e8edf4"/><text x="0" y={184-i*45} fill="#64748b" fontSize="11">{fmt(max*i/3)}</text></g>)}<polygon points={`40,180 ${points} 664,180`} fill="url(#chartFill)"/><polyline points={points} fill="none" stroke="#2563eb" strokeWidth="3" strokeLinejoin="round"/>{trend.map((v,i)=><circle key={i} cx={40+i*48} cy={180-v/max*135} r="4" fill="#2563eb"><title>{days[i]}: {fmt(v)} minutes</title></circle>)}<text x="40" y="210" fill="#64748b" fontSize="12">{days[0]}</text><text x="664" y="210" textAnchor="end" fill="#64748b" fontSize="12">{days[13]}</text></svg>{!filtered.length&&<p className="empty-note">No recorded calls yet. Usage appears here after a call is logged or synced.</p>}</article>
+    <article className="card"><h3>Call outcomes</h3><p className="card-subtitle">All recorded calls in this selection</p><div className="donut" style={{background:segments.length?`conic-gradient(${segments.join(',')})`:'#e8edf4'}}><div><strong>{filtered.length}</strong><span>calls</span></div></div><div className="chart-legend">{outcomes.map(([name,count],i)=><span key={name}><i style={{background:colors[i%4]}}/>{name}<b>{count}</b></span>)}</div></article></div>
+    <article className="card"><div className="card-header"><div><h3>Agent performance</h3><p className="card-subtitle">Compare consumption and available minutes.</p></div><Link className="btn btn-secondary" to="/usage">Manage balances <ArrowUpRight size={16}/></Link></div><div className="table-container"><table className="data-table"><thead><tr><th>Agent</th><th>Calls</th><th>Minutes</th><th>Credits / min</th><th>Credits used</th><th>Minutes left</th><th>Balance</th></tr></thead><tbody>{rows.map(a=><tr key={a.agent_id}><td><strong>{a.agent_name}</strong><small className="cell-secondary">{a.business_name}</small></td><td>{a.calls}</td><td>{fmt(a.actual_minutes)}</td><td>{fmt(a.credits_per_minute)}</td><td>{fmt(a.credits_used)}</td><td>{a.credits_per_minute>0?fmt(a.remaining_balance/a.credits_per_minute):'No charge'}</td><td><span className={`badge ${a.balance_status==='ok'?'badge-green':'badge-yellow'}`}>{fmt(a.remaining_balance)} credits</span></td></tr>)}{!rows.length&&<tr><td colSpan="7">{busy?'Loading agents…':'No agents available.'}</td></tr>}</tbody></table></div></article>
+  </section>;
+}

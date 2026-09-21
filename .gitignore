@@ -26,3 +26,17 @@ env/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Local verification artifacts
+backend/server-*.log
+frontend/server-*.log
+frontend/.playwright-cli/
+frontend/output/
+frontend/dist/
+
+# Local usage records and verification scratch
+backend/admin/data/
+work/
+.freebuff/
+
+.playwright-cli/
