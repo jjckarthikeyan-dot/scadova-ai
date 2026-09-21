@@ -1,7 +1,12 @@
 const getApiBase = () => {
   if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
   if (typeof window !== "undefined") {
-    return `${window.location.protocol}//${window.location.hostname}:8000`;
+    // In local dev mode (Vite dev server port 5173 / 3000), point to local backend port 8000
+    if (window.location.port === "5173" || window.location.port === "3000") {
+      return `${window.location.protocol}//${window.location.hostname}:8000`;
+    }
+    // In production / cloud, frontend and backend share the same origin
+    return "";
   }
   return "http://127.0.0.1:8000";
 };
