@@ -271,6 +271,7 @@ async def create_business(payload: BusinessCreatePayload):
         template = get_industry_template(industry_input)
         
         agent_name = (payload.agent_name or f"{biz_name} AI Specialist").strip()
+        role = template.get("default_agent_role") or template.get("role") or "Appointment & Consultation Specialist"
         voice_id = payload.voice_id or template.get("default_voice_id", "serena_exec_en")
         voice_name = payload.voice_name or template.get("default_voice_name", "Serena - Executive English")
         language = payload.language or template.get("default_language", "en")
