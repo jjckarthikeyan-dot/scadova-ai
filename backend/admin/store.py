@@ -216,6 +216,15 @@ class LiveDataStore:
         except Exception as e:
             logger.error(f"Error fetching Supabase businesses: {e}")
 
+        # Pre-fetch agents by business_id for live agent mapping
+        agents_by_biz = {}
+        try:
+            ag_res = supabase.table("agents").select("*").execute()
+            for ag in (ag_res.data or []):
+                agents_by_biz[str(ag.get("business_id"))] = ag
+        except Exception as e:
+            logger.debug(f"Agents fetch note: {e}")
+
         for b in db_businesses:
             b_key = b.get("business_key", "")
             b_name = b.get("name", "Business")
@@ -273,6 +282,32 @@ class LiveDataStore:
                 cost = round(calls * 0.10, 2)
                 full_addr = "United States"
 
+            # Allow live DB columns to override defaults
+            if b.get("business_type"):
+                raw_bt = b["business_type"]
+                biz_type_label = "Service and Appointment Booking" if raw_bt in ("service_and_appointment", "Service and Appointment Booking") else (
+                    "Restaurant" if raw_bt in ("restaurant", "Restaurant") else (
+                        "Loan Agency" if raw_bt in ("loan_agency", "Loan Agency") else raw_bt
+                    )
+                )
+            if b.get("industry"):
+                industry = b["industry"]
+            if b.get("country"):
+                country = b["country"]
+            if b.get("address"):
+                full_addr = b["address"]
+            if b.get("fish_agent_id"):
+                fish_id = b["fish_agent_id"]
+
+            # If an assigned agent exists in the agents table, use its latest config
+            ag_row = agents_by_biz.get(str(b["id"]))
+            if ag_row:
+                agent_name = ag_row.get("name") or agent_name
+                fish_id = ag_row.get("fish_agent_id") or fish_id
+                voice = ag_row.get("voice_name") or voice
+                lang = ag_row.get("language") or lang
+                llm = ag_row.get("llm_model") or llm
+
             results.append({
                 "id": b["id"],
                 "business_key": b_key,
@@ -282,8 +317,11 @@ class LiveDataStore:
                 "industry": industry,
                 "country": country,
                 "timezone": b.get("timezone", "America/New_York"),
-                "status": "active" if b.get("active", True) else "draft",
+                "status": "active" if b.get("active", True) else "inactive",
                 "phone": b.get("phone", ""),
+                "email": b.get("email", ""),
+                "website": b.get("website", ""),
+                "description": b.get("description", ""),
                 "address": full_addr,
                 "agent_name": agent_name,
                 "agent_id": fish_id,
@@ -292,7 +330,7 @@ class LiveDataStore:
                 "voice": voice,
                 "voice_id": "scadova_voice_en_neutral" if lang == "en" else "scadova_voice_te_conversational",
                 "llm": llm,
-                "prompt_version": "v1.0",
+                "prompt_version": b.get("prompt_version") or "v1.0",
                 "calls": calls,
                 "minutes": minutes,
                 "appointments": appointments,
@@ -371,11 +409,71 @@ class LiveDataStore:
 
     def update_business(self, biz_id: Any, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         try:
-            clean_upd = {k: v for k, v in updates.items() if k in ["name", "phone", "timezone", "active"]}
+            b_type = updates.get("business_type") or updates.get("type")
+            status_val = updates.get("status")
+            is_active = True if status_val == "active" else (False if status_val in ["inactive", "draft"] else None)
+
+            clean_upd = {}
+            if "name" in updates and updates["name"]:
+                clean_upd["name"] = updates["name"].strip()
+                clean_upd["spoken_name"] = updates["name"].strip()
+            if b_type:
+                clean_upd["business_type"] = b_type
+            if "phone" in updates:
+                clean_upd["phone"] = updates["phone"]
+            if "email" in updates:
+                clean_upd["email"] = updates["email"]
+            if "website" in updates:
+                clean_upd["website"] = updates["website"]
+            if "address" in updates:
+                clean_upd["address"] = updates["address"]
+            if "description" in updates:
+                clean_upd["description"] = updates["description"]
+            if "industry" in updates:
+                clean_upd["industry"] = updates["industry"]
+            if "country" in updates:
+                clean_upd["country"] = updates["country"]
+            if "timezone" in updates:
+                clean_upd["timezone"] = updates["timezone"]
+            if is_active is not None:
+                clean_upd["active"] = is_active
+            if "fish_agent_id" in updates or "agent_id" in updates:
+                clean_upd["fish_agent_id"] = updates.get("fish_agent_id") or updates.get("agent_id")
+            clean_upd["updated_at"] = _now_iso()
+
             if clean_upd:
                 supabase.table("businesses").update(clean_upd).eq("id", biz_id).execute()
+
+            # Update or create voice agent record in agents table
+            agent_upd = {}
+            if "agent_name" in updates and updates["agent_name"]:
+                agent_upd["name"] = updates["agent_name"]
+            if "fish_agent_id" in updates or "agent_id" in updates:
+                agent_upd["fish_agent_id"] = updates.get("fish_agent_id") or updates.get("agent_id")
+            if "voice" in updates and updates["voice"]:
+                agent_upd["voice_name"] = updates["voice"]
+            if "voice_id" in updates and updates["voice_id"]:
+                agent_upd["voice_id"] = updates["voice_id"]
+            if "language" in updates and updates["language"]:
+                agent_upd["language"] = updates["language"]
+            if "llm" in updates and updates["llm"]:
+                agent_upd["llm_model"] = updates["llm"]
+
+            if agent_upd:
+                try:
+                    ag_res = supabase.table("agents").select("id").eq("business_id", biz_id).execute()
+                    if ag_res.data:
+                        supabase.table("agents").update(agent_upd).eq("business_id", biz_id).execute()
+                    else:
+                        agent_upd["business_id"] = biz_id
+                        agent_upd.setdefault("name", updates.get("agent_name") or f"{updates.get('name', 'Business')} Agent")
+                        supabase.table("agents").insert(agent_upd).execute()
+                except Exception as ag_err:
+                    logger.debug(f"Agent update note: {ag_err}")
+
         except Exception as e:
-            logger.debug(f"Supabase update note: {e}")
+            logger.error(f"Error updating business in Supabase: {e}")
+
         return self.get_business(biz_id)
 
     # -------------------------------------------------------------

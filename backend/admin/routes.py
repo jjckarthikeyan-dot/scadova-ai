@@ -42,6 +42,7 @@ class BusinessCreatePayload(BaseModel):
 class BusinessUpdatePayload(BaseModel):
     name: Optional[str] = None
     type: Optional[str] = None
+    business_type: Optional[str] = None
     industry: Optional[str] = None
     country: Optional[str] = None
     timezone: Optional[str] = None
@@ -51,6 +52,14 @@ class BusinessUpdatePayload(BaseModel):
     address: Optional[str] = None
     description: Optional[str] = None
     status: Optional[str] = None
+    agent_name: Optional[str] = None
+    fish_agent_id: Optional[str] = None
+    agent_id: Optional[str] = None
+    voice: Optional[str] = None
+    voice_id: Optional[str] = None
+    language: Optional[str] = None
+    llm: Optional[str] = None
+    prompt_version: Optional[str] = None
 
 
 class AgentCreatePayload(BaseModel):
