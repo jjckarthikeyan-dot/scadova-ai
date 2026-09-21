@@ -3,6 +3,7 @@ import {
   Plus, 
   Search, 
   Edit3, 
+  Trash2, 
   Building2, 
   MapPin, 
   Bot, 
@@ -13,8 +14,12 @@ import {
   Mail, 
   Globe, 
   Clock, 
+  AlertTriangle, 
+  Eye, 
   Sliders, 
-  ShieldCheck 
+  Calendar, 
+  Users, 
+  FileText 
 } from 'lucide-react';
 import { apiFetch } from '../api';
 
@@ -22,11 +27,15 @@ export default function BusinessesPage({ onOpenOnboarding }) {
   const [businesses, setBusinesses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [selectedBiz, setSelectedBiz] = useState(null);
-  const [editingBiz, setEditingBiz] = useState(null);
-  const [activeTab, setActiveTab] = useState('profile');
+  const [selectedBiz, setSelectedBiz] = useState(null); // Business Profile modal
+  const [editingBiz, setEditingBiz] = useState(null);   // Edit Form modal
+  const [deletingBiz, setDeletingBiz] = useState(null); // Delete confirmation modal
+  const [editTab, setEditTab] = useState('profile');
+  const [profileTab, setProfileTab] = useState('overview');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
   const [bannerNotice, setBannerNotice] = useState('');
 
   const loadBusinesses = () => {
@@ -50,7 +59,7 @@ export default function BusinessesPage({ onOpenOnboarding }) {
       status: biz.status || 'active',
       language: biz.language || 'en',
     });
-    setActiveTab('profile');
+    setEditTab('profile');
     setSaveError('');
   };
 
@@ -101,7 +110,6 @@ export default function BusinessesPage({ onOpenOnboarding }) {
       setBannerNotice(`Business '${payload.name}' updated successfully.`);
       setTimeout(() => setBannerNotice(''), 5000);
 
-      // Notify other pages (dashboard, calls, usage)
       window.dispatchEvent(new Event('scadova:updated'));
     } catch (err) {
       setSaveError(err.message || 'Failed to update business');
@@ -110,11 +118,38 @@ export default function BusinessesPage({ onOpenOnboarding }) {
     }
   };
 
+  const handleDeleteBusiness = async () => {
+    if (!deletingBiz) return;
+    setDeleting(true);
+    setDeleteError('');
+
+    try {
+      await apiFetch(`/admin/businesses/${deletingBiz.id}`, {
+        method: 'DELETE',
+      });
+
+      setBusinesses((prev) => prev.filter((b) => b.id !== deletingBiz.id));
+      if (selectedBiz && selectedBiz.id === deletingBiz.id) setSelectedBiz(null);
+      if (editingBiz && editingBiz.id === deletingBiz.id) setEditingBiz(null);
+
+      const deletedName = deletingBiz.name;
+      setDeletingBiz(null);
+      setBannerNotice(`Business '${deletedName}' and all related data were permanently deleted.`);
+      setTimeout(() => setBannerNotice(''), 5000);
+
+      window.dispatchEvent(new Event('scadova:updated'));
+    } catch (err) {
+      setDeleteError(err.message || 'Failed to delete business');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const filtered = businesses.filter((b) =>
     b.name?.toLowerCase().includes(search.toLowerCase()) ||
     b.type?.toLowerCase().includes(search.toLowerCase()) ||
-    b.industry?.toLowerCase().includes(search.toLowerCase()) ||
-    b.country?.toLowerCase().includes(search.toLowerCase())
+    b.country?.toLowerCase().includes(search.toLowerCase()) ||
+    b.phone?.includes(search)
   );
 
   return (
@@ -125,7 +160,7 @@ export default function BusinessesPage({ onOpenOnboarding }) {
           <div>
             <h2 style={{ fontSize: 18, fontWeight: 800, color: '#0f172a' }}>Businesses Management</h2>
             <p className="card-subtitle">
-              Configured enterprise entities, voice agent runtime mapping, and department routing.
+              Configured enterprise entities, department routing, and live voice operations.
             </p>
           </div>
           <button className="btn btn-yellow" onClick={onOpenOnboarding}>
@@ -135,8 +170,9 @@ export default function BusinessesPage({ onOpenOnboarding }) {
         </div>
 
         {bannerNotice && (
-          <div className="notice success" style={{ marginTop: 14 }}>
-            {bannerNotice}
+          <div className="notice success" style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Check size={16} color="#16a34a" />
+            <span>{bannerNotice}</span>
           </div>
         )}
 
@@ -146,7 +182,7 @@ export default function BusinessesPage({ onOpenOnboarding }) {
             <input
               type="text"
               className="search-input"
-              placeholder="Search by business name, type, industry, or country..."
+              placeholder="Search by business name, type, country, phone..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -155,7 +191,7 @@ export default function BusinessesPage({ onOpenOnboarding }) {
         </div>
       </div>
 
-      {/* BUSINESSES TABLE */}
+      {/* CLEAN, FOCUSED BUSINESSES TABLE (NO CLUTTER) */}
       <div className="card">
         {loading ? (
           <div style={{ textAlign: 'center', padding: 40, color: '#64748b' }}>
@@ -170,33 +206,52 @@ export default function BusinessesPage({ onOpenOnboarding }) {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Business Name</th>
-                  <th>Type</th>
-                  <th>Industry</th>
-                  <th>Country</th>
-                  <th>Timezone</th>
+                  <th style={{ minWidth: 220 }}>Business</th>
+                  <th>Category</th>
                   <th>Status</th>
-                  <th>Assigned Agent</th>
-                  <th>Agent ID</th>
-                  <th>Lang</th>
-                  <th>Voice Model</th>
-                  <th>LLM</th>
-                  <th>Prompt Ver.</th>
-                  <th>Calls</th>
-                  <th>Minutes</th>
-                  <th>Appointments</th>
-                  <th>Leads</th>
-                  <th>Cost</th>
+                  <th>Phone / Contact</th>
+                  <th>Calls & Minutes</th>
                   <th>Last Sync</th>
-                  <th style={{ minWidth: 200 }}>Actions</th>
+                  <th style={{ textAlign: 'right', minWidth: 200 }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((biz) => (
                   <tr key={biz.id}>
-                    <td style={{ fontWeight: 700, color: '#0f172a' }}>
-                      {biz.name}
+                    {/* 1. BUSINESS NAME + COUNTRY & TIMEZONE */}
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div style={{
+                          width: 34,
+                          height: 34,
+                          borderRadius: 8,
+                          background: 'linear-gradient(135deg, #2563eb 0%, #0ea5e9 100%)',
+                          color: '#ffffff',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontWeight: 700,
+                          fontSize: 14,
+                          flexShrink: 0
+                        }}>
+                          {biz.name ? biz.name.charAt(0).toUpperCase() : 'B'}
+                        </div>
+                        <div>
+                          <div 
+                            style={{ fontWeight: 700, color: '#0f172a', cursor: 'pointer' }}
+                            onClick={() => setSelectedBiz(biz)}
+                            title="Click to view full Business Profile"
+                          >
+                            {biz.name}
+                          </div>
+                          <div style={{ fontSize: 11, color: '#64748b' }}>
+                            {biz.country || 'USA'} • {biz.timezone || 'UTC'}
+                          </div>
+                        </div>
+                      </div>
                     </td>
+
+                    {/* 2. CATEGORY / TYPE */}
                     <td>
                       <span className={`badge ${
                         biz.type?.toLowerCase().includes('restaurant') ? 'badge-yellow' :
@@ -205,58 +260,72 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                         {biz.type || 'Service and Appointment Booking'}
                       </span>
                     </td>
-                    <td style={{ color: '#475569' }}>{biz.industry || 'General'}</td>
-                    <td>{biz.country || 'USA'}</td>
-                    <td style={{ fontSize: 11, color: '#64748b' }}>{biz.timezone || 'UTC'}</td>
+
+                    {/* 3. OPERATING STATUS */}
                     <td>
                       <span className={`badge ${biz.status === 'inactive' ? 'badge-red' : 'badge-green'}`}>
-                        {biz.status || 'active'}
+                        {biz.status === 'active' ? 'Active' : (biz.status || 'Active')}
                       </span>
                     </td>
-                    <td style={{ fontWeight: 600 }}>{biz.agent_name || '—'}</td>
-                    <td style={{ fontFamily: 'monospace', fontSize: 11, color: '#2563eb' }}>
-                      {biz.agent_id || biz.fish_agent_id ? (biz.agent_id || biz.fish_agent_id).substring(0, 14) + '...' : '—'}
-                    </td>
+
+                    {/* 4. PHONE / CONTACT */}
                     <td>
-                      <span className="badge badge-gray">{biz.language?.toUpperCase() || 'EN'}</span>
+                      <div style={{ fontSize: 13, color: '#1e293b', fontWeight: 500 }}>
+                        {biz.phone || <span style={{ color: '#94a3b8' }}>No phone set</span>}
+                      </div>
+                      {biz.email && (
+                        <div style={{ fontSize: 11, color: '#64748b' }}>
+                          {biz.email}
+                        </div>
+                      )}
                     </td>
-                    <td style={{ fontSize: 12 }}>{biz.voice || 'Serena'}</td>
-                    <td style={{ fontSize: 11, color: '#475569' }}>{biz.llm || 'Scadova Runtime'}</td>
+
+                    {/* 5. CALLS & TALK TIME */}
                     <td>
-                      <span className="badge badge-blue">{biz.prompt_version || 'v1.0'}</span>
+                      <div style={{ fontWeight: 600, color: '#0f172a' }}>
+                        {biz.calls || 0} calls
+                      </div>
+                      <div style={{ fontSize: 11, color: '#64748b' }}>
+                        {biz.minutes || '0.0'} min • ${Number(biz.cost || 0).toFixed(2)}
+                      </div>
                     </td>
-                    <td style={{ fontWeight: 600 }}>{biz.calls || 0}</td>
-                    <td>{biz.minutes || '0.0'}</td>
-                    <td style={{ fontWeight: 600, color: '#10b981' }}>{biz.appointments || 0}</td>
-                    <td style={{ fontWeight: 600, color: '#f59e0b' }}>{biz.leads || 0}</td>
-                    <td style={{ fontWeight: 600 }}>${Number(biz.cost || 0).toFixed(2)}</td>
+
+                    {/* 6. LAST SYNC */}
                     <td style={{ fontSize: 11, color: '#64748b' }}>
-                      {biz.last_synced_at ? new Date(biz.last_synced_at).toLocaleDateString() : 'Just now'}
+                      {biz.last_synced_at ? new Date(biz.last_synced_at).toLocaleDateString() : 'Live'}
                     </td>
-                    <td>
-                      <div style={{ display: 'flex', gap: 6, flexWrap: 'nowrap' }}>
+
+                    {/* 7. ACTIONS (PROFILE, EDIT, DELETE) */}
+                    <td style={{ textAlign: 'right' }}>
+                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
                         <button
                           className="btn btn-secondary btn-sm"
                           onClick={() => setSelectedBiz(biz)}
-                          title="View telemetry and details"
+                          title="Open complete Business Profile with all voice agent, appointments, and telemetry details"
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
                         >
-                          Details
+                          <Eye size={13} />
+                          <span>Profile</span>
                         </button>
+                        
                         <button
                           className="btn btn-secondary btn-sm"
-                          style={{ background: '#f1f5f9', color: '#1e293b', display: 'flex', alignItems: 'center', gap: 5, border: '1px solid #cbd5e1' }}
+                          style={{ background: '#f8fafc', color: '#1e293b', display: 'inline-flex', alignItems: 'center', gap: 4, border: '1px solid #cbd5e1' }}
                           onClick={() => handleOpenEdit(biz)}
-                          title="Edit all fields of this business"
+                          title="Edit this business"
                         >
                           <Edit3 size={13} color="#2563eb" />
                           <span>Edit</span>
                         </button>
+
                         <button
-                          className="btn btn-primary btn-sm"
-                          onClick={() => onOpenOnboarding && onOpenOnboarding({ mode: 'agent', businessId: biz.id })}
-                          title="Configure voice agent for this business"
+                          className="btn btn-danger btn-sm"
+                          onClick={() => setDeletingBiz(biz)}
+                          title="Delete business and all related records"
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
                         >
-                          + Voice Agent
+                          <Trash2 size={13} />
+                          <span>Delete</span>
                         </button>
                       </div>
                     </td>
@@ -268,87 +337,298 @@ export default function BusinessesPage({ onOpenOnboarding }) {
         )}
       </div>
 
-      {/* BUSINESS DETAILS MODAL */}
+      {/* ============================================================ */}
+      {/* 1. COMPREHENSIVE BUSINESS PROFILE MODAL                       */}
+      {/* (Holds Industry, Voice Model, Agent, LLM, Appointments, Leads) */}
+      {/* ============================================================ */}
       {selectedBiz && (
         <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: 640 }}>
-            <div className="modal-header">
-              <div>
-                <h3>{selectedBiz.name}</h3>
-                <p className="card-subtitle">{selectedBiz.type} • {selectedBiz.country}</p>
+          <div className="edit-dialog" role="dialog" aria-modal="true" style={{ maxWidth: 780 }}>
+            {/* PROFILE HEADER */}
+            <div className="modal-header" style={{ padding: '20px 24px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                <div style={{
+                  width: 48,
+                  height: 48,
+                  borderRadius: 12,
+                  background: 'linear-gradient(135deg, #2563eb 0%, #0ea5e9 100%)',
+                  color: '#ffffff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 20,
+                  fontWeight: 800,
+                  boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)'
+                }}>
+                  {selectedBiz.name ? selectedBiz.name.charAt(0).toUpperCase() : 'B'}
+                </div>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#0f172a' }}>
+                      {selectedBiz.name}
+                    </h3>
+                    <span className="badge badge-blue">ID #{selectedBiz.id}</span>
+                    <span className={`badge ${selectedBiz.status === 'inactive' ? 'badge-red' : 'badge-green'}`}>
+                      {selectedBiz.status === 'active' ? 'Active' : (selectedBiz.status || 'Active')}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 12, color: '#64748b', marginTop: 3 }}>
+                    {selectedBiz.type} • {selectedBiz.country} • Key: <code style={{ color: '#2563eb' }}>{selectedBiz.business_key}</code>
+                  </div>
+                </div>
               </div>
-              <button className="modal-close-btn" onClick={() => setSelectedBiz(null)}>✕</button>
+              <button 
+                className="modal-close-btn" 
+                onClick={() => setSelectedBiz(null)}
+                aria-label="Close profile"
+              >
+                <X size={20} />
+              </button>
             </div>
-            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <div className="card" style={{ background: '#f8fafc' }}>
-                <h5 style={{ fontWeight: 700, marginBottom: 8 }}>Contact & Location</h5>
-                <div style={{ fontSize: 12.5, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <div><strong>Phone:</strong> {selectedBiz.phone || 'N/A'}</div>
-                  <div><strong>Email:</strong> {selectedBiz.email || 'N/A'}</div>
-                  <div><strong>Website:</strong> {selectedBiz.website ? <a href={selectedBiz.website} target="_blank" rel="noreferrer" style={{ color: '#2563eb' }}>{selectedBiz.website}</a> : 'N/A'}</div>
-                  <div><strong>Address:</strong> {selectedBiz.address || 'N/A'}</div>
-                  <div><strong>Timezone:</strong> {selectedBiz.timezone}</div>
-                  {selectedBiz.description && <div><strong>Description:</strong> {selectedBiz.description}</div>}
-                </div>
-              </div>
 
-              <div className="card" style={{ background: '#f8fafc' }}>
-                <h5 style={{ fontWeight: 700, marginBottom: 8 }}>Voice Agent & Runtime</h5>
-                <div style={{ fontSize: 12.5, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <div><strong>Assigned Agent:</strong> {selectedBiz.agent_name}</div>
-                  <div><strong>Agent ID:</strong> <span style={{ fontFamily: 'monospace', color: '#2563eb' }}>{selectedBiz.agent_id || selectedBiz.fish_agent_id}</span></div>
-                  <div><strong>Language:</strong> {selectedBiz.language?.toUpperCase()}</div>
-                  <div><strong>Voice Model:</strong> {selectedBiz.voice}</div>
-                  <div><strong>LLM Engine:</strong> {selectedBiz.llm}</div>
-                  <div><strong>Prompt Version:</strong> {selectedBiz.prompt_version}</div>
-                </div>
-              </div>
-
-              <div className="card" style={{ background: '#f8fafc' }}>
-                <h5 style={{ fontWeight: 700, marginBottom: 8 }}>Operational Telemetry</h5>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8, textAlign: 'center' }}>
-                  <div style={{ padding: 8, background: '#ffffff', borderRadius: 6, border: '1px solid #e2e8f0' }}>
-                    <div style={{ fontSize: 11, color: '#64748b' }}>Calls</div>
-                    <div style={{ fontSize: 16, fontWeight: 700 }}>{selectedBiz.calls || 0}</div>
-                  </div>
-                  <div style={{ padding: 8, background: '#ffffff', borderRadius: 6, border: '1px solid #e2e8f0' }}>
-                    <div style={{ fontSize: 11, color: '#64748b' }}>Minutes</div>
-                    <div style={{ fontSize: 16, fontWeight: 700 }}>{selectedBiz.minutes || 0}</div>
-                  </div>
-                  <div style={{ padding: 8, background: '#ffffff', borderRadius: 6, border: '1px solid #e2e8f0' }}>
-                    <div style={{ fontSize: 11, color: '#64748b' }}>Bookings</div>
-                    <div style={{ fontSize: 16, fontWeight: 700, color: '#10b981' }}>{selectedBiz.appointments || 0}</div>
-                  </div>
-                  <div style={{ padding: 8, background: '#ffffff', borderRadius: 6, border: '1px solid #e2e8f0' }}>
-                    <div style={{ fontSize: 11, color: '#64748b' }}>Total Cost</div>
-                    <div style={{ fontSize: 16, fontWeight: 700, color: '#ef4444' }}>${Number(selectedBiz.cost || 0).toFixed(2)}</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div className="modal-footer" style={{ display: 'flex', justifyContent: 'space-between' }}>
+            {/* PROFILE TAB BAR */}
+            <div className="edit-tabs-bar">
               <button
-                className="btn btn-yellow"
+                type="button"
+                className={`edit-tab-btn ${profileTab === 'overview' ? 'active' : ''}`}
+                onClick={() => setProfileTab('overview')}
+              >
+                <Building2 size={15} />
+                <span>Enterprise Overview & Industry</span>
+              </button>
+              <button
+                type="button"
+                className={`edit-tab-btn ${profileTab === 'agent' ? 'active' : ''}`}
+                onClick={() => setProfileTab('agent')}
+              >
+                <Bot size={15} />
+                <span>Assigned Agent, Voice & LLM</span>
+              </button>
+              <button
+                type="button"
+                className={`edit-tab-btn ${profileTab === 'operations' ? 'active' : ''}`}
+                onClick={() => setProfileTab('operations')}
+              >
+                <Calendar size={15} />
+                <span>Appointments, Leads & Metrics</span>
+              </button>
+            </div>
+
+            {/* PROFILE BODY */}
+            <div className="modal-body" style={{ padding: '22px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {/* TAB 1: OVERVIEW & INDUSTRY */}
+              {profileTab === 'overview' && (
+                <>
+                  <div className="edit-section-card">
+                    <div className="edit-section-header">
+                      <h4>
+                        <Building2 size={16} color="#2563eb" />
+                        Enterprise Profile & Industry
+                      </h4>
+                      <span className="badge badge-gray">Profile</span>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, fontSize: 13 }}>
+                      <div>
+                        <strong style={{ color: '#64748b', fontSize: 11, textTransform: 'uppercase', display: 'block' }}>Industry Domain</strong>
+                        <span style={{ fontWeight: 600, color: '#0f172a' }}>{selectedBiz.industry || 'General Industry'}</span>
+                      </div>
+                      <div>
+                        <strong style={{ color: '#64748b', fontSize: 11, textTransform: 'uppercase', display: 'block' }}>Business Type</strong>
+                        <span style={{ fontWeight: 600, color: '#0f172a' }}>{selectedBiz.type}</span>
+                      </div>
+                      <div>
+                        <strong style={{ color: '#64748b', fontSize: 11, textTransform: 'uppercase', display: 'block' }}>Country</strong>
+                        <span style={{ fontWeight: 600, color: '#0f172a' }}>{selectedBiz.country || 'USA'}</span>
+                      </div>
+                      <div>
+                        <strong style={{ color: '#64748b', fontSize: 11, textTransform: 'uppercase', display: 'block' }}>Operating Timezone</strong>
+                        <span style={{ fontWeight: 600, color: '#0f172a' }}>{selectedBiz.timezone || 'UTC'}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="edit-section-card">
+                    <div className="edit-section-header">
+                      <h4>
+                        <MapPin size={16} color="#2563eb" />
+                        Contact Credentials & Address
+                      </h4>
+                      <span className="badge badge-gray">Location</span>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, fontSize: 13 }}>
+                      <div>
+                        <strong style={{ color: '#64748b', fontSize: 11, textTransform: 'uppercase', display: 'block' }}>Phone Number</strong>
+                        <span style={{ fontWeight: 600, color: '#0f172a' }}>{selectedBiz.phone || 'N/A'}</span>
+                      </div>
+                      <div>
+                        <strong style={{ color: '#64748b', fontSize: 11, textTransform: 'uppercase', display: 'block' }}>Email Address</strong>
+                        <span style={{ fontWeight: 600, color: '#0f172a' }}>{selectedBiz.email || 'N/A'}</span>
+                      </div>
+                      <div style={{ gridColumn: '1 / -1' }}>
+                        <strong style={{ color: '#64748b', fontSize: 11, textTransform: 'uppercase', display: 'block' }}>Website URL</strong>
+                        {selectedBiz.website ? (
+                          <a href={selectedBiz.website} target="_blank" rel="noreferrer" style={{ color: '#2563eb', fontWeight: 600 }}>
+                            {selectedBiz.website}
+                          </a>
+                        ) : 'N/A'}
+                      </div>
+                      <div style={{ gridColumn: '1 / -1' }}>
+                        <strong style={{ color: '#64748b', fontSize: 11, textTransform: 'uppercase', display: 'block' }}>Physical Address</strong>
+                        <span style={{ color: '#0f172a' }}>{selectedBiz.address || 'N/A'}</span>
+                      </div>
+                      {selectedBiz.description && (
+                        <div style={{ gridColumn: '1 / -1' }}>
+                          <strong style={{ color: '#64748b', fontSize: 11, textTransform: 'uppercase', display: 'block' }}>Description & Scope</strong>
+                          <p style={{ margin: '4px 0 0', color: '#475569', fontSize: 12.5, lineHeight: 1.5 }}>
+                            {selectedBiz.description}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* TAB 2: ASSIGNED AGENT, VOICE MODEL & LLM */}
+              {profileTab === 'agent' && (
+                <div className="edit-section-card">
+                  <div className="edit-section-header">
+                    <h4>
+                      <Bot size={16} color="#2563eb" />
+                      Assigned Voice Agent, Telephony & LLM Engine
+                    </h4>
+                    <span className="badge badge-blue">AI Routing</span>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, fontSize: 13 }}>
+                    <div style={{ padding: 12, background: '#ffffff', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                      <strong style={{ color: '#64748b', fontSize: 11, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                        Assigned Agent Name
+                      </strong>
+                      <span style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>
+                        {selectedBiz.agent_name || 'No agent assigned'}
+                      </span>
+                    </div>
+
+                    <div style={{ padding: 12, background: '#ffffff', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                      <strong style={{ color: '#64748b', fontSize: 11, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                        Agent ID / Fish Audio ID
+                      </strong>
+                      <code style={{ fontSize: 13, color: '#2563eb', fontWeight: 700, background: '#eff6ff', padding: '2px 6px', borderRadius: 4 }}>
+                        {selectedBiz.agent_id || selectedBiz.fish_agent_id || 'Not configured'}
+                      </code>
+                    </div>
+
+                    <div style={{ padding: 12, background: '#ffffff', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                      <strong style={{ color: '#64748b', fontSize: 11, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                        Voice Model Profile
+                      </strong>
+                      <span style={{ fontWeight: 600, color: '#0f172a' }}>
+                        {selectedBiz.voice || 'Serena - Executive English'}
+                      </span>
+                      <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+                        Language: {selectedBiz.language?.toUpperCase() || 'EN'}
+                      </div>
+                    </div>
+
+                    <div style={{ padding: 12, background: '#ffffff', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                      <strong style={{ color: '#64748b', fontSize: 11, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                        LLM Engine / Provider
+                      </strong>
+                      <span style={{ fontWeight: 600, color: '#0f172a' }}>
+                        {selectedBiz.llm || 'Scadova Runtime / scadova-routing-v1'}
+                      </span>
+                      <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+                        Prompt Version: {selectedBiz.prompt_version || 'v1.0'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 3: APPOINTMENTS, LEADS & METRICS */}
+              {profileTab === 'operations' && (
+                <div className="edit-section-card">
+                  <div className="edit-section-header">
+                    <h4>
+                      <Activity size={16} color="#2563eb" />
+                      Appointments, Leads & Telemetry Performance
+                    </h4>
+                    <span className="badge badge-green">Operations</span>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, textAlign: 'center' }}>
+                    <div style={{ padding: 14, background: '#ffffff', borderRadius: 10, border: '1px solid #e2e8f0' }}>
+                      <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Appointments</div>
+                      <div style={{ fontSize: 24, fontWeight: 800, color: '#10b981', margin: '4px 0' }}>{selectedBiz.appointments || 0}</div>
+                      <div style={{ fontSize: 10.5, color: '#94a3b8' }}>Confirmed bookings</div>
+                    </div>
+
+                    <div style={{ padding: 14, background: '#ffffff', borderRadius: 10, border: '1px solid #e2e8f0' }}>
+                      <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Leads Captured</div>
+                      <div style={{ fontSize: 24, fontWeight: 800, color: '#f59e0b', margin: '4px 0' }}>{selectedBiz.leads || 0}</div>
+                      <div style={{ fontSize: 10.5, color: '#94a3b8' }}>Active prospects</div>
+                    </div>
+
+                    <div style={{ padding: 14, background: '#ffffff', borderRadius: 10, border: '1px solid #e2e8f0' }}>
+                      <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Total Calls</div>
+                      <div style={{ fontSize: 24, fontWeight: 800, color: '#0f172a', margin: '4px 0' }}>{selectedBiz.calls || 0}</div>
+                      <div style={{ fontSize: 10.5, color: '#94a3b8' }}>Inbound & outbound</div>
+                    </div>
+
+                    <div style={{ padding: 14, background: '#ffffff', borderRadius: 10, border: '1px solid #e2e8f0' }}>
+                      <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Total Cost</div>
+                      <div style={{ fontSize: 24, fontWeight: 800, color: '#ef4444', margin: '4px 0' }}>${Number(selectedBiz.cost || 0).toFixed(2)}</div>
+                      <div style={{ fontSize: 10.5, color: '#94a3b8' }}>Talk & AI expense</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* PROFILE FOOTER */}
+            <div className="modal-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <button
+                className="btn btn-danger"
                 onClick={() => {
                   const target = selectedBiz;
                   setSelectedBiz(null);
-                  handleOpenEdit(target);
+                  setDeletingBiz(target);
                 }}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
               >
-                <Edit3 size={14} style={{ marginRight: 6 }} />
-                Edit Business
+                <Trash2 size={14} />
+                <span>Delete Business</span>
               </button>
-              <button className="btn btn-secondary" onClick={() => setSelectedBiz(null)}>Close</button>
+
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button
+                  className="btn btn-primary"
+                  onClick={() => {
+                    const target = selectedBiz;
+                    setSelectedBiz(null);
+                    handleOpenEdit(target);
+                  }}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                >
+                  <Edit3 size={14} />
+                  <span>Edit Business</span>
+                </button>
+                <button className="btn btn-secondary" onClick={() => setSelectedBiz(null)}>
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* BEST-IN-CLASS EXECUTIVE EDIT BUSINESS MODAL */}
+      {/* ============================================================ */}
+      {/* 2. EDIT BUSINESS FORM MODAL                                  */}
+      {/* ============================================================ */}
       {editingBiz && (
         <div className="modal-overlay">
           <div className="edit-dialog" role="dialog" aria-modal="true">
-            {/* MODAL HEADER */}
             <div className="modal-header" style={{ padding: '20px 24px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <div style={{ 
@@ -362,22 +642,17 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                   color: '#ffffff',
                   boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)'
                 }}>
-                  <Building2 size={22} />
+                  <Edit3 size={20} />
                 </div>
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <h3 style={{ fontSize: 17, fontWeight: 800, color: '#0f172a', margin: 0 }}>
-                      Edit Business
+                      Edit: {editingBiz.name}
                     </h3>
-                    <span className="badge badge-blue" style={{ fontSize: 11 }}>
-                      ID #{editingBiz.id}
-                    </span>
-                    <span className={`badge ${editingBiz.status === 'inactive' ? 'badge-red' : 'badge-green'}`} style={{ fontSize: 11 }}>
-                      {editingBiz.status === 'active' ? 'Active' : editingBiz.status}
-                    </span>
+                    <span className="badge badge-blue">ID #{editingBiz.id}</span>
                   </div>
                   <p className="card-subtitle" style={{ margin: '2px 0 0 0', fontSize: 12 }}>
-                    Update enterprise profile, contact credentials, and AI voice telephony runtime.
+                    Update enterprise details, assigned voice agent, and AI settings.
                   </p>
                 </div>
               </div>
@@ -385,18 +660,17 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                 className="modal-close-btn" 
                 onClick={() => setEditingBiz(null)} 
                 disabled={saving}
-                aria-label="Close modal"
               >
                 <X size={20} />
               </button>
             </div>
 
-            {/* TAB NAVIGATION BAR */}
+            {/* TAB SELECTOR */}
             <div className="edit-tabs-bar">
               <button
                 type="button"
-                className={`edit-tab-btn ${activeTab === 'profile' ? 'active' : ''}`}
-                onClick={() => setActiveTab('profile')}
+                className={`edit-tab-btn ${editTab === 'profile' ? 'active' : ''}`}
+                onClick={() => setEditTab('profile')}
               >
                 <Building2 size={15} />
                 <span>Enterprise Profile</span>
@@ -404,8 +678,8 @@ export default function BusinessesPage({ onOpenOnboarding }) {
 
               <button
                 type="button"
-                className={`edit-tab-btn ${activeTab === 'contact' ? 'active' : ''}`}
-                onClick={() => setActiveTab('contact')}
+                className={`edit-tab-btn ${editTab === 'contact' ? 'active' : ''}`}
+                onClick={() => setEditTab('contact')}
               >
                 <MapPin size={15} />
                 <span>Contact & Location</span>
@@ -413,24 +687,14 @@ export default function BusinessesPage({ onOpenOnboarding }) {
 
               <button
                 type="button"
-                className={`edit-tab-btn ${activeTab === 'voice' ? 'active' : ''}`}
-                onClick={() => setActiveTab('voice')}
+                className={`edit-tab-btn ${editTab === 'voice' ? 'active' : ''}`}
+                onClick={() => setEditTab('voice')}
               >
                 <Bot size={15} />
-                <span>Voice Agent & AI</span>
-              </button>
-
-              <button
-                type="button"
-                className={`edit-tab-btn ${activeTab === 'telemetry' ? 'active' : ''}`}
-                onClick={() => setActiveTab('telemetry')}
-              >
-                <Activity size={15} />
-                <span>Telemetry Overview</span>
+                <span>Voice Agent & Telephony</span>
               </button>
             </div>
 
-            {/* MODAL FORM BODY */}
             <form onSubmit={handleSaveEdit} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
               <div style={{ flex: 1, overflowY: 'auto', padding: '22px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
                 {saveError && (
@@ -439,15 +703,15 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                   </div>
                 )}
 
-                {/* TAB 1: ENTERPRISE PROFILE */}
-                {activeTab === 'profile' && (
+                {/* EDIT TAB 1: PROFILE */}
+                {editTab === 'profile' && (
                   <div className="edit-section-card">
                     <div className="edit-section-header">
                       <h4>
                         <Building2 size={16} color="#2563eb" />
-                        Enterprise Profile & Classification
+                        Enterprise Profile & Industry
                       </h4>
-                      <span className="badge badge-gray">General Info</span>
+                      <span className="badge badge-gray">Required Fields</span>
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16 }}>
@@ -463,12 +727,11 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                           onChange={(e) => setEditingBiz({ ...editingBiz, name: e.target.value })}
                           placeholder="e.g. Scadova Medical Clinic"
                         />
-                        <small>Public registered enterprise or company name.</small>
                       </div>
 
                       <div className="edit-field-group">
                         <label>
-                          <span>Business Type <span style={{ color: '#ef4444' }}>*</span></span>
+                          <span>Business Category / Type <span style={{ color: '#ef4444' }}>*</span></span>
                         </label>
                         <select
                           className="form-select"
@@ -481,7 +744,6 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                           <option value="Clinic">Clinic</option>
                           <option value="Custom">Custom Enterprise</option>
                         </select>
-                        <small>Determines voice agent workflows, tools & department routing.</small>
                       </div>
 
                       <div className="edit-field-group">
@@ -493,11 +755,10 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                           value={editingBiz.status || 'active'}
                           onChange={(e) => setEditingBiz({ ...editingBiz, status: e.target.value })}
                         >
-                          <option value="active">Active (Operational & Routing Calls)</option>
+                          <option value="active">Active (Operational & Routing)</option>
                           <option value="inactive">Inactive (Paused)</option>
                           <option value="draft">Draft (Onboarding)</option>
                         </select>
-                        <small>Inactive businesses will reject incoming telephony calls.</small>
                       </div>
 
                       <div className="edit-field-group">
@@ -509,9 +770,8 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                           className="form-control"
                           value={editingBiz.industry || ''}
                           onChange={(e) => setEditingBiz({ ...editingBiz, industry: e.target.value })}
-                          placeholder="e.g. Healthcare & Consultation"
+                          placeholder="e.g. Fine Dining, Healthcare, NBFC Finance"
                         />
-                        <small>Sector specialization for voice prompt tailoring.</small>
                       </div>
 
                       <div className="edit-field-group">
@@ -523,9 +783,8 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                           className="form-control"
                           value={editingBiz.country || ''}
                           onChange={(e) => setEditingBiz({ ...editingBiz, country: e.target.value })}
-                          placeholder="e.g. United States, India, United Kingdom"
+                          placeholder="e.g. United States, India"
                         />
-                        <small>Jurisdiction & currency localization.</small>
                       </div>
 
                       <div className="edit-field-group">
@@ -537,29 +796,28 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                           value={editingBiz.timezone || 'America/New_York'}
                           onChange={(e) => setEditingBiz({ ...editingBiz, timezone: e.target.value })}
                         >
-                          <option value="America/New_York">America/New_York (Eastern Time - US)</option>
-                          <option value="America/Chicago">America/Chicago (Central Time - US)</option>
-                          <option value="America/Denver">America/Denver (Mountain Time - US)</option>
-                          <option value="America/Los_Angeles">America/Los_Angeles (Pacific Time - US)</option>
-                          <option value="Asia/Kolkata">Asia/Kolkata (Indian Standard Time)</option>
-                          <option value="Europe/London">Europe/London (GMT / BST)</option>
-                          <option value="UTC">UTC (Coordinated Universal Time)</option>
+                          <option value="America/New_York">America/New_York (Eastern)</option>
+                          <option value="America/Chicago">America/Chicago (Central)</option>
+                          <option value="America/Denver">America/Denver (Mountain)</option>
+                          <option value="America/Los_Angeles">America/Los_Angeles (Pacific)</option>
+                          <option value="Asia/Kolkata">Asia/Kolkata (IST)</option>
+                          <option value="Europe/London">Europe/London (GMT/BST)</option>
+                          <option value="UTC">UTC</option>
                         </select>
-                        <small>All appointments and booking slots calculate against this timezone.</small>
                       </div>
                     </div>
                   </div>
                 )}
 
-                {/* TAB 2: CONTACT & LOCATION */}
-                {activeTab === 'contact' && (
+                {/* EDIT TAB 2: CONTACT */}
+                {editTab === 'contact' && (
                   <div className="edit-section-card">
                     <div className="edit-section-header">
                       <h4>
                         <MapPin size={16} color="#2563eb" />
-                        Contact Credentials & Physical Location
+                        Contact Credentials & Address
                       </h4>
-                      <span className="badge badge-gray">Reachability</span>
+                      <span className="badge badge-gray">Contact</span>
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16 }}>
@@ -574,7 +832,6 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                           onChange={(e) => setEditingBiz({ ...editingBiz, phone: e.target.value })}
                           placeholder="e.g. +1 205-549-3374"
                         />
-                        <small>Primary phone line displayed to clients and callers.</small>
                       </div>
 
                       <div className="edit-field-group">
@@ -588,12 +845,11 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                           onChange={(e) => setEditingBiz({ ...editingBiz, email: e.target.value })}
                           placeholder="contact@business.com"
                         />
-                        <small>Receipts, booking alerts, and administrative notifications.</small>
                       </div>
 
                       <div className="edit-field-group" style={{ gridColumn: '1 / -1' }}>
                         <label>
-                          <span>Official Website URL</span>
+                          <span>Website URL</span>
                         </label>
                         <input
                           type="url"
@@ -602,12 +858,11 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                           onChange={(e) => setEditingBiz({ ...editingBiz, website: e.target.value })}
                           placeholder="https://example.com"
                         />
-                        <small>Used by the agent as a reference link when callers request online portals.</small>
                       </div>
 
                       <div className="edit-field-group" style={{ gridColumn: '1 / -1' }}>
                         <label>
-                          <span>Headquarters / Physical Street Address</span>
+                          <span>Headquarters Address</span>
                         </label>
                         <input
                           type="text"
@@ -616,12 +871,11 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                           onChange={(e) => setEditingBiz({ ...editingBiz, address: e.target.value })}
                           placeholder="Suite, Street Address, City, State, ZIP"
                         />
-                        <small>Quoted directly by the AI agent when customers ask for location or directions.</small>
                       </div>
 
                       <div className="edit-field-group" style={{ gridColumn: '1 / -1' }}>
                         <label>
-                          <span>Business Summary & Scope of Services</span>
+                          <span>Business Summary & Scope</span>
                         </label>
                         <textarea
                           rows={3}
@@ -629,29 +883,28 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                           style={{ resize: 'vertical' }}
                           value={editingBiz.description || ''}
                           onChange={(e) => setEditingBiz({ ...editingBiz, description: e.target.value })}
-                          placeholder="Comprehensive description of business capabilities, specialties, and customer service guidelines..."
+                          placeholder="Brief description of enterprise offerings, policies, and guidelines..."
                         />
-                        <small>Injected into system prompts to enrich conversational intelligence.</small>
                       </div>
                     </div>
                   </div>
                 )}
 
-                {/* TAB 3: VOICE AGENT & AI */}
-                {activeTab === 'voice' && (
+                {/* EDIT TAB 3: VOICE AGENT & AI */}
+                {editTab === 'voice' && (
                   <div className="edit-section-card">
                     <div className="edit-section-header">
                       <h4>
                         <Bot size={16} color="#2563eb" />
-                        Voice Agent & AI Telephony Runtime
+                        Voice Agent, Telephony & LLM Runtime
                       </h4>
-                      <span className="badge badge-blue">AI Routing</span>
+                      <span className="badge badge-blue">AI Telephony</span>
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16 }}>
                       <div className="edit-field-group">
                         <label>
-                          <span>Assigned Agent Persona Name</span>
+                          <span>Assigned Agent Name</span>
                         </label>
                         <input
                           type="text"
@@ -660,12 +913,11 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                           onChange={(e) => setEditingBiz({ ...editingBiz, agent_name: e.target.value })}
                           placeholder="e.g. Scadova Specialist AI"
                         />
-                        <small>Spoken identity introduced by the voice assistant during calls.</small>
                       </div>
 
                       <div className="edit-field-group">
                         <label>
-                          <span>Fish Audio / Telephony Agent ID</span>
+                          <span>Telephony / Fish Audio Agent ID</span>
                         </label>
                         <input
                           type="text"
@@ -675,7 +927,6 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                           onChange={(e) => setEditingBiz({ ...editingBiz, fish_agent_id: e.target.value, agent_id: e.target.value })}
                           placeholder="agent_xxxxxxxx"
                         />
-                        <small>Remote telephony provider link. Can be synced from Usage & Credits.</small>
                       </div>
 
                       <div className="edit-field-group">
@@ -694,7 +945,6 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                           <option value="fr">French (International)</option>
                           <option value="de">German (International)</option>
                         </select>
-                        <small>Base ASR and speech synthesis language model.</small>
                       </div>
 
                       <div className="edit-field-group">
@@ -708,12 +958,11 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                           onChange={(e) => setEditingBiz({ ...editingBiz, voice: e.target.value })}
                           placeholder="e.g. Marcus - Conversational English"
                         />
-                        <small>Acoustic timbre, accent, and cadence profile.</small>
                       </div>
 
                       <div className="edit-field-group">
                         <label>
-                          <span>LLM Provider & Engine</span>
+                          <span>LLM Engine / Provider</span>
                         </label>
                         <input
                           type="text"
@@ -722,12 +971,11 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                           onChange={(e) => setEditingBiz({ ...editingBiz, llm: e.target.value })}
                           placeholder="e.g. Scadova Runtime / scadova-routing-v1"
                         />
-                        <small>Inference engine powering real-time conversation turns.</small>
                       </div>
 
                       <div className="edit-field-group">
                         <label>
-                          <span>Prompt Version Identifier</span>
+                          <span>Prompt Version</span>
                         </label>
                         <input
                           type="text"
@@ -736,62 +984,16 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                           onChange={(e) => setEditingBiz({ ...editingBiz, prompt_version: e.target.value })}
                           placeholder="v1.0"
                         />
-                        <small>Prompt version tag tracked in API telemetry and logs.</small>
                       </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* TAB 4: TELEMETRY */}
-                {activeTab === 'telemetry' && (
-                  <div className="edit-section-card">
-                    <div className="edit-section-header">
-                      <h4>
-                        <Activity size={16} color="#2563eb" />
-                        Live Telemetry & Usage Snapshot
-                      </h4>
-                      <span className="badge badge-green">Live Metrics</span>
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, textAlign: 'center' }}>
-                      <div style={{ padding: 14, background: '#ffffff', borderRadius: 10, border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
-                        <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Recorded Calls</div>
-                        <div style={{ fontSize: 24, fontWeight: 800, color: '#0f172a', margin: '4px 0' }}>{editingBiz.calls || 0}</div>
-                        <div style={{ fontSize: 10.5, color: '#94a3b8' }}>Total incoming & outbound</div>
-                      </div>
-
-                      <div style={{ padding: 14, background: '#ffffff', borderRadius: 10, border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
-                        <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Talk Time</div>
-                        <div style={{ fontSize: 24, fontWeight: 800, color: '#2563eb', margin: '4px 0' }}>{editingBiz.minutes || '0.0'}</div>
-                        <div style={{ fontSize: 10.5, color: '#94a3b8' }}>Cumulative minutes</div>
-                      </div>
-
-                      <div style={{ padding: 14, background: '#ffffff', borderRadius: 10, border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
-                        <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Appointments</div>
-                        <div style={{ fontSize: 24, fontWeight: 800, color: '#10b981', margin: '4px 0' }}>{editingBiz.appointments || 0}</div>
-                        <div style={{ fontSize: 10.5, color: '#94a3b8' }}>Confirmed bookings</div>
-                      </div>
-
-                      <div style={{ padding: 14, background: '#ffffff', borderRadius: 10, border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
-                        <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Total Expense</div>
-                        <div style={{ fontSize: 24, fontWeight: 800, color: '#ef4444', margin: '4px 0' }}>${Number(editingBiz.cost || 0).toFixed(2)}</div>
-                        <div style={{ fontSize: 10.5, color: '#94a3b8' }}>Voice, LLM & telephony</div>
-                      </div>
-                    </div>
-
-                    <div style={{ background: '#ffffff', padding: 14, borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 12, color: '#64748b' }}>
-                      <strong>Last Synchronized:</strong> {editingBiz.last_synced_at ? new Date(editingBiz.last_synced_at).toLocaleString() : 'Live'}
-                      <br />
-                      <strong>Database Key:</strong> <code style={{ color: '#2563eb' }}>{editingBiz.business_key}</code>
                     </div>
                   </div>
                 )}
               </div>
 
-              {/* MODAL FOOTER */}
+              {/* EDIT FOOTER */}
               <div className="modal-footer" style={{ padding: '16px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div style={{ fontSize: 11.5, color: '#64748b' }}>
-                  All updates save directly to Supabase in real-time.
+                  Changes synchronize across database and voice runtime immediately.
                 </div>
                 <div style={{ display: 'flex', gap: 10 }}>
                   <button
@@ -806,7 +1008,7 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                     type="submit"
                     className="btn btn-primary"
                     disabled={saving}
-                    style={{ minWidth: 140, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                    style={{ minWidth: 130, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
                   >
                     {saving ? (
                       <>
@@ -823,6 +1025,98 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                 </div>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* 3. DELETE CONFIRMATION MODAL                                  */}
+      {/* ============================================================ */}
+      {deletingBiz && (
+        <div className="modal-overlay">
+          <div className="modal-content" style={{ maxWidth: 480 }}>
+            <div className="modal-header" style={{ borderBottom: '1px solid #fee2e2' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ 
+                  width: 36, 
+                  height: 36, 
+                  borderRadius: 8, 
+                  background: '#fee2e2', 
+                  color: '#ef4444', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center' 
+                }}>
+                  <AlertTriangle size={20} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: 16, fontWeight: 700, color: '#991b1b', margin: 0 }}>
+                    Delete Business
+                  </h3>
+                  <p className="card-subtitle" style={{ margin: 0, fontSize: 12 }}>
+                    Permanent cascade deletion
+                  </p>
+                </div>
+              </div>
+              <button 
+                className="modal-close-btn" 
+                onClick={() => setDeletingBiz(null)}
+                disabled={deleting}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="modal-body" style={{ padding: '20px 24px' }}>
+              {deleteError && (
+                <div className="notice error" style={{ marginBottom: 14 }}>
+                  {deleteError}
+                </div>
+              )}
+
+              <p style={{ fontSize: 13.5, color: '#334155', lineHeight: 1.5, margin: 0 }}>
+                Are you sure you want to permanently delete <strong>{deletingBiz.name}</strong>?
+              </p>
+              <p style={{ fontSize: 12, color: '#64748b', marginTop: 10, lineHeight: 1.5 }}>
+                This will permanently delete this business and all related records from Supabase, including:
+              </p>
+              <ul style={{ fontSize: 12, color: '#dc2626', margin: '8px 0 0 18px', padding: 0 }}>
+                <li>Associated voice agents & telephony mappings</li>
+                <li>All customer appointments & bookings</li>
+                <li>Catalogue services & operating hours</li>
+                <li>Call logs, recordings & telemetry records</li>
+              </ul>
+            </div>
+
+            <div className="modal-footer" style={{ padding: '14px 24px', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setDeletingBiz(null)}
+                disabled={deleting}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger"
+                onClick={handleDeleteBusiness}
+                disabled={deleting}
+                style={{ background: '#dc2626', color: '#ffffff', borderColor: '#dc2626', minWidth: 130, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+              >
+                {deleting ? (
+                  <>
+                    <span className="spin">⟳</span>
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 size={15} />
+                    <span>Confirm Delete</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -222,10 +222,11 @@ async def update_business(business_id: str, payload: BusinessUpdatePayload):
 
 @router.delete("/businesses/{business_id}")
 async def delete_business(business_id: str):
-    """Delete a business."""
-    # Soft mark inactive
-    data_store.update_business(business_id, {"status": "inactive"})
-    return {"success": True, "message": "Business deactivated"}
+    """Delete a business and all associated child data."""
+    success = data_store.delete_business(business_id)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to delete business and related records")
+    return {"success": True, "message": "Business and related data permanently deleted"}
 
 
 # ============================================================

@@ -476,6 +476,48 @@ class LiveDataStore:
 
         return self.get_business(biz_id)
 
+    def delete_business(self, biz_id: Any) -> bool:
+        """Permanently delete business and all associated child data from Supabase."""
+        try:
+            target_id = None
+            for b in self.list_businesses():
+                if str(b["id"]) == str(biz_id) or b.get("business_key") == str(biz_id):
+                    target_id = b["id"]
+                    break
+            if target_id is None:
+                try:
+                    target_id = int(biz_id)
+                except Exception:
+                    pass
+
+            if target_id is not None:
+                for table in [
+                    "appointments",
+                    "services",
+                    "business_hours",
+                    "agents",
+                    "call_logs",
+                    "integrations",
+                    "prompt_versions",
+                ]:
+                    try:
+                        supabase.table(table).delete().eq("business_id", target_id).execute()
+                    except Exception as e:
+                        logger.debug(f"Cascade delete from {table} note: {e}")
+
+                supabase.table("businesses").delete().eq("id", target_id).execute()
+
+            with self.state_lock:
+                self.cached_agents = [a for a in self.cached_agents if str(a.get("business_id")) != str(biz_id)]
+                self.local_appointments = [a for a in self.local_appointments if str(a.get("business_id")) != str(biz_id)]
+                self.local_calls = [c for c in self.local_calls if str(c.get("business_id")) != str(biz_id)]
+                self.persist_usage()
+
+            return True
+        except Exception as e:
+            logger.error(f"Error deleting business {biz_id}: {e}")
+            return False
+
     # -------------------------------------------------------------
     # LIVE LEADS (FETCHED DIRECTLY FROM LOAN_APPLICATIONS & PROFILES)
     # -------------------------------------------------------------
