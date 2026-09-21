@@ -34,6 +34,15 @@ class ServiceResponse(BaseModel):
     updated_at: Optional[str] = None
 
 
+class ServiceDetailsRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    business_id: Optional[str] = None
+    service_id: Optional[Any] = None
+    service_name: Optional[str] = None
+    service: Optional[str] = None
+
+
 # ============================================================
 # BUSINESS HOURS SCHEMAS
 # ============================================================

@@ -397,12 +397,12 @@ def build_tool_definition(tool_name: str, business_key: str, business_name: str,
     elif tool_name == 'get_service_details':
         return {
             'name': 'get_service_details',
-            'description': f'Get detailed information, full description, price, and duration for a specific service ID at {b_name}.',
+            'description': f'Get detailed information, full description, price, and duration for a specific service at {b_name} by service name or numeric ID.',
             'tool_type': 'webhook',
             'method': 'GET',
             'url': f'{base}/api/appointment-booking/services/{b_key}/{{service_id}}',
             'arguments': [
-                {'name': 'service_id', 'description': 'The numeric ID of the service to look up'}
+                {'name': 'service_id', 'description': 'The name or numeric ID of the service to look up (e.g. Automation, VoicePilot, or 1)'}
             ],
             'content_type': 'application/json',
             'body_template': '',
