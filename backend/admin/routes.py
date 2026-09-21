@@ -19,6 +19,13 @@ from backend.admin.industry_prompts import (
     list_industry_templates,
     update_industry_template,
 )
+from backend.admin.fish_audio import (
+    fish_key,
+    ensure_fish_tools,
+    create_fish_agent,
+    update_fish_agent_config,
+    provision_business_fish_agent,
+)
 
 logger = logging.getLogger("admin_routes")
 
@@ -309,9 +316,40 @@ async def create_business(payload: BusinessCreatePayload):
             "created_by": "System Auto-Provisioner",
         })
         
-        # Dedicated runtime agent ID formatted for Fish Audio
+        # Auto-create Webhook Tools and Live Voice Agent in Fish Audio API
         clean_key = b_key.lower().replace("-", "_")
-        fish_agent_id = f"agent_{clean_key[:22]}"
+        fish_agent_id = None
+        attached_tool_ids = []
+
+        if fish_key():
+            try:
+                # 1. Register required webhook tools with parameters & JSON body in Fish Audio workspace
+                attached_tool_ids = await ensure_fish_tools(
+                    business_key=b_key,
+                    business_name=biz_name,
+                    tool_names=tools
+                )
+                logger.info(f"Verified/created {len(attached_tool_ids)} Fish Audio tools for {biz_name}")
+
+                # 2. Create the live Voice Agent in Fish Audio workspace with system prompt, voice, and tools
+                fish_res = await create_fish_agent(
+                    business_name=biz_name,
+                    business_key=b_key,
+                    agent_name=agent_name,
+                    system_prompt=system_prompt,
+                    first_message=first_message,
+                    voice_id=voice_id,
+                    language=language,
+                    tool_ids=attached_tool_ids
+                )
+                fish_agent_id = fish_res.get("agent_id")
+                logger.info(f"Created live Fish Audio agent {fish_agent_id} for {biz_name}")
+            except Exception as fish_err:
+                logger.error(f"Fish Audio live agent auto-provision note for {biz_name}: {fish_err}")
+
+        # Fallback to deterministic local key if Fish Audio was offline or unconfigured
+        if not fish_agent_id:
+            fish_agent_id = f"agent_{clean_key[:22]}"
         
         agent_record = {
             "business_id": biz_id,
@@ -331,6 +369,7 @@ async def create_business(payload: BusinessCreatePayload):
             "prompt_version_id": prompt_rec.get("id"),
             "prompt_version": "v1.0",
             "attached_tools": tools,
+            "attached_tool_ids": attached_tool_ids,
             "status": "active",
         }
         saved_agent = data_store.add_agent(agent_record)
@@ -346,6 +385,8 @@ async def create_business(payload: BusinessCreatePayload):
             "prompt_version": "v1.0",
             "first_message": first_message,
             "system_prompt": system_prompt,
+            "attached_tools": tools,
+            "attached_tool_ids": attached_tool_ids,
             "status": "active",
         }
         data_store.update_business(biz_id, updates)
@@ -465,7 +506,37 @@ async def update_business(business_id: str, payload: BusinessUpdatePayload):
             except Exception as e:
                 logger.debug(f"Update hours sync note: {e}")
 
+    # Synchronize updates to Fish Audio if the agent is linked to a live Fish Audio provider
+    fish_id = updated.get("fish_agent_id") or updated.get("agent_id")
+    if fish_key() and fish_id and len(fish_id) == 32 and not fish_id.startswith("agent_"):
+        try:
+            tool_ids = None
+            if payload.attached_tools is not None:
+                tool_ids = await ensure_fish_tools(
+                    business_key=updated.get("business_key") or f"biz_{biz_id}",
+                    business_name=updated.get("name") or "Business",
+                    tool_names=payload.attached_tools
+                )
+            await update_fish_agent_config(
+                fish_agent_id=fish_id,
+                system_prompt=payload.system_prompt,
+                first_message=payload.first_message,
+                voice_id=payload.voice_id or payload.voice,
+                language=payload.language,
+                tool_ids=tool_ids,
+                publish=True
+            )
+            logger.info(f"Synchronized updates to live Fish Audio agent {fish_id}")
+        except Exception as fish_upd_err:
+            logger.debug(f"Fish Audio live agent update notice: {fish_upd_err}")
+
     return updated
+
+
+@router.post("/businesses/{business_id}/provision-fish-agent")
+async def provision_business_fish_agent_alias(business_id: str):
+    """Ensure Fish Audio webhook tools and live agent exist for an existing registered business."""
+    return await provision_business_fish_agent(business_id)
 
 
 @router.delete("/businesses/{business_id}")
