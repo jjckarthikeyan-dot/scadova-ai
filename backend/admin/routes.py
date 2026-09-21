@@ -50,6 +50,7 @@ class BusinessCreatePayload(BaseModel):
     language: Optional[str] = "en"
     system_prompt: Optional[str] = None
     first_message: Optional[str] = None
+    attached_tools: Optional[List[str]] = None
     auto_create_agent: bool = True
 
 
@@ -74,6 +75,9 @@ class BusinessUpdatePayload(BaseModel):
     language: Optional[str] = None
     llm: Optional[str] = None
     prompt_version: Optional[str] = None
+    first_message: Optional[str] = None
+    system_prompt: Optional[str] = None
+    attached_tools: Optional[List[str]] = None
 
 
 class AgentCreatePayload(BaseModel):
@@ -228,8 +232,7 @@ async def create_business(payload: BusinessCreatePayload):
         voice_id = payload.voice_id or template.get("default_voice_id", "serena_exec_en")
         voice_name = payload.voice_name or template.get("default_voice_name", "Serena - Executive English")
         language = payload.language or template.get("default_language", "en")
-        role = template.get("default_agent_role", "Appointment & Consultation Specialist")
-        tools = template.get("tools", [])
+        tools = payload.attached_tools if (payload.attached_tools is not None and len(payload.attached_tools) > 0) else template.get("tools", [])
         
         # Render system prompt and greeting (or use customized ones provided in the payload)
         system_prompt = (

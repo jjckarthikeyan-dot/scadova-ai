@@ -301,12 +301,29 @@ class LiveDataStore:
 
             # If an assigned agent exists in the agents table, use its latest config
             ag_row = agents_by_biz.get(str(b["id"]))
+            first_msg = b.get("first_message") or ""
+            sys_prompt = b.get("system_prompt") or ""
+            attached_tools = b.get("attached_tools") or []
+
+            has_agent = False
             if ag_row:
                 agent_name = ag_row.get("name") or agent_name
                 fish_id = ag_row.get("fish_agent_id") or fish_id
                 voice = ag_row.get("voice_name") or voice
                 lang = ag_row.get("language") or lang
                 llm = ag_row.get("llm_model") or llm
+                first_msg = ag_row.get("first_message") or first_msg
+                sys_prompt = ag_row.get("system_prompt") or sys_prompt
+                attached_tools = ag_row.get("attached_tools") or attached_tools
+                has_agent = True
+            elif b.get("fish_agent_id") or b.get("agent_name"):
+                has_agent = True
+            elif not ("bawarchi" in b_key.lower() or "mkn" in b_key.lower()):
+                agent_name = None
+                fish_id = None
+                has_agent = False
+            else:
+                has_agent = True
 
             results.append({
                 "id": b["id"],
@@ -326,6 +343,10 @@ class LiveDataStore:
                 "agent_name": agent_name,
                 "agent_id": fish_id,
                 "fish_agent_id": fish_id,
+                "has_agent": has_agent,
+                "first_message": first_msg,
+                "system_prompt": sys_prompt,
+                "attached_tools": attached_tools,
                 "language": lang,
                 "voice": voice,
                 "voice_id": "scadova_voice_en_neutral" if lang == "en" else "scadova_voice_te_conversational",
@@ -458,6 +479,27 @@ class LiveDataStore:
                 agent_upd["language"] = updates["language"]
             if "llm" in updates and updates["llm"]:
                 agent_upd["llm_model"] = updates["llm"]
+            if "first_message" in updates and updates["first_message"]:
+                agent_upd["first_message"] = updates["first_message"]
+            if "attached_tools" in updates and updates["attached_tools"] is not None:
+                agent_upd["attached_tools"] = updates["attached_tools"]
+            if "prompt_version" in updates and updates["prompt_version"]:
+                agent_upd["prompt_version"] = updates["prompt_version"]
+
+            if "system_prompt" in updates and updates["system_prompt"]:
+                agent_upd["system_prompt"] = updates["system_prompt"]
+                try:
+                    self.add_prompt_version({
+                        "business_id": biz_id,
+                        "version_number": 2,
+                        "version_label": updates.get("prompt_version") or "v1.1",
+                        "prompt_text": updates["system_prompt"],
+                        "changed_fields": {"source": "admin_edit"},
+                        "is_published": True,
+                        "created_by": "Admin User",
+                    })
+                except Exception as p_err:
+                    logger.debug(f"Prompt version update note: {p_err}")
 
             if agent_upd:
                 try:
@@ -467,7 +509,27 @@ class LiveDataStore:
                     else:
                         agent_upd["business_id"] = biz_id
                         agent_upd.setdefault("name", updates.get("agent_name") or f"{updates.get('name', 'Business')} Agent")
+                        agent_upd.setdefault("fish_agent_id", updates.get("fish_agent_id") or f"agent_biz_{biz_id}")
+                        agent_upd.setdefault("role", "Appointment & Consultation Specialist")
+                        agent_upd.setdefault("llm_provider", "Scadova Runtime")
+                        agent_upd.setdefault("llm_model", "scadova-routing-v1")
+                        agent_upd.setdefault("status", "active")
                         supabase.table("agents").insert(agent_upd).execute()
+                        supabase.table("businesses").update({"fish_agent_id": agent_upd["fish_agent_id"]}).eq("id", biz_id).execute()
+
+                    # Synchronize Fish Audio provider knowledge
+                    fish_id = agent_upd.get("fish_agent_id") or updates.get("fish_agent_id") or f"agent_biz_{biz_id}"
+                    if updates.get("system_prompt"):
+                        self.set_provider_knowledge(fish_id, {
+                            "agent_id": fish_id,
+                            "business_name": updates.get("name") or "Business",
+                            "profile": {
+                                "description": updates.get("description") or f"Enterprise Voice Agent",
+                                "hours": "Configured operating hours",
+                                "policies": "Appointments require verified customer details and backend tool execution.",
+                            },
+                            "extra_markdown": f"# Live System Prompt\n\n{updates['system_prompt']}",
+                        })
                 except Exception as ag_err:
                     logger.debug(f"Agent update note: {ag_err}")
 

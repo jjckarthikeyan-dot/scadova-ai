@@ -24,7 +24,8 @@ import {
   Copy,
   CheckCheck,
   Wand2,
-  Code2
+  Code2,
+  RotateCcw
 } from 'lucide-react';
 import { apiFetch } from '../api';
 
@@ -968,9 +969,20 @@ export default function BusinessesPage({ onOpenOnboarding }) {
   const [copiedGreeting, setCopiedGreeting] = useState(false);
   const [copiedProfilePrompt, setCopiedProfilePrompt] = useState(false);
   const [copiedProfileGreeting, setCopiedProfileGreeting] = useState(false);
+  const [copiedEditPrompt, setCopiedEditPrompt] = useState(false);
+  const [copiedEditGreeting, setCopiedEditGreeting] = useState(false);
 
   // Industry Templates from backend
   const [templates, setTemplates] = useState(DEFAULT_TEMPLATES);
+
+  const getBizTemplate = (biz) => {
+    if (!biz) return templates.service_and_appointment || DEFAULT_TEMPLATES.service_and_appointment;
+    const raw = (biz.industry || biz.type || 'service_and_appointment').toLowerCase();
+    if (raw.includes('restaurant')) return templates.restaurant || DEFAULT_TEMPLATES.restaurant;
+    if (raw.includes('clinic') || raw.includes('health')) return templates.clinic || DEFAULT_TEMPLATES.clinic;
+    if (raw.includes('loan') || raw.includes('finance')) return templates.loan_finance || DEFAULT_TEMPLATES.loan_finance;
+    return templates.service_and_appointment || DEFAULT_TEMPLATES.service_and_appointment;
+  };
 
   // New Business state
   const [newBiz, setNewBiz] = useState({
@@ -984,12 +996,14 @@ export default function BusinessesPage({ onOpenOnboarding }) {
     website: '',
     address: '',
     description: '',
+    setup_agent_now: true,
     agent_name: '',
     voice_id: 'serena_exec_en',
     voice_name: 'Serena - Executive English',
     language: 'en',
     greeting: '',
     system_prompt: '',
+    attached_tools: [],
     auto_create_agent: true
   });
 
@@ -1040,12 +1054,14 @@ export default function BusinessesPage({ onOpenOnboarding }) {
       website: '',
       address: '',
       description: '',
+      setup_agent_now: true,
       agent_name: defaultAgent,
       voice_id: defaultTemplate.default_voice_id || defaultTemplate.voice_id || 'serena_exec_en',
       voice_name: defaultTemplate.default_voice_name || defaultTemplate.voice_name || 'Serena - Executive English',
       language: defaultTemplate.default_language || defaultTemplate.language || 'en',
       greeting: renderTemplateText(defaultTemplate.greeting, defaultName || '{{business_name}}', defaultAgent, defaultKey),
       system_prompt: renderTemplateText(defaultTemplate.system_prompt, defaultName || '{{business_name}}', defaultAgent, defaultKey),
+      attached_tools: [...(defaultTemplate.tools || [])],
       auto_create_agent: true
     });
     setAddTab('business');
@@ -1070,6 +1086,7 @@ export default function BusinessesPage({ onOpenOnboarding }) {
       language: t.default_language || t.language || 'en',
       greeting: renderTemplateText(t.greeting, bizName, agentName, bizKey),
       system_prompt: renderTemplateText(t.system_prompt, bizName, agentName, bizKey),
+      attached_tools: [...(t.tools || [])],
     }));
   };
 
@@ -1089,6 +1106,108 @@ export default function BusinessesPage({ onOpenOnboarding }) {
     }));
   };
 
+  // Tool toggle & selection helpers for Add Business modal
+  const handleToggleNewBizTool = (tool) => {
+    setNewBiz((prev) => {
+      const current = prev.attached_tools || [];
+      const exists = current.includes(tool);
+      return {
+        ...prev,
+        attached_tools: exists ? current.filter((t) => t !== tool) : [...current, tool],
+      };
+    });
+  };
+
+  const handleSelectAllNewBizTools = () => {
+    const t = templates[newBiz.industry] || DEFAULT_TEMPLATES[newBiz.industry] || DEFAULT_TEMPLATES.service_and_appointment;
+    setNewBiz((prev) => ({
+      ...prev,
+      attached_tools: [...(t.tools || [])],
+    }));
+  };
+
+  const handleClearAllNewBizTools = () => {
+    setNewBiz((prev) => ({
+      ...prev,
+      attached_tools: [],
+    }));
+  };
+
+  const handleResetAddGreeting = () => {
+    const t = templates[newBiz.industry] || DEFAULT_TEMPLATES[newBiz.industry] || DEFAULT_TEMPLATES.service_and_appointment;
+    const bizName = newBiz.name.trim() || '{{business_name}}';
+    const agentName = newBiz.agent_name?.trim() || `${bizName} AI Assistant`;
+    const bizKey = bizName.toLowerCase().replace(/\s+/g, '_');
+    setNewBiz((prev) => ({
+      ...prev,
+      greeting: renderTemplateText(t.greeting, bizName, agentName, bizKey),
+    }));
+  };
+
+  const handleResetAddPrompt = () => {
+    const t = templates[newBiz.industry] || DEFAULT_TEMPLATES[newBiz.industry] || DEFAULT_TEMPLATES.service_and_appointment;
+    const bizName = newBiz.name.trim() || '{{business_name}}';
+    const agentName = newBiz.agent_name?.trim() || `${bizName} AI Assistant`;
+    const bizKey = bizName.toLowerCase().replace(/\s+/g, '_');
+    setNewBiz((prev) => ({
+      ...prev,
+      system_prompt: renderTemplateText(t.system_prompt, bizName, agentName, bizKey),
+    }));
+  };
+
+  // Tool toggle & selection helpers for Edit Business modal
+  const handleToggleEditTool = (tool) => {
+    setEditingBiz((prev) => {
+      if (!prev) return prev;
+      const current = prev.attached_tools || [];
+      const exists = current.includes(tool);
+      return {
+        ...prev,
+        attached_tools: exists ? current.filter((t) => t !== tool) : [...current, tool],
+      };
+    });
+  };
+
+  const handleSelectAllEditTools = () => {
+    if (!editingBiz) return;
+    const t = getBizTemplate(editingBiz);
+    setEditingBiz((prev) => ({
+      ...prev,
+      attached_tools: [...(t.tools || [])],
+    }));
+  };
+
+  const handleClearAllEditTools = () => {
+    setEditingBiz((prev) => ({
+      ...prev,
+      attached_tools: [],
+    }));
+  };
+
+  const handleResetEditGreeting = () => {
+    if (!editingBiz) return;
+    const t = getBizTemplate(editingBiz);
+    const bName = editingBiz.name || '{{business_name}}';
+    const aName = editingBiz.agent_name || `${bName} AI Assistant`;
+    const bKey = editingBiz.business_key || bName.toLowerCase().replace(/\s+/g, '_');
+    setEditingBiz((prev) => ({
+      ...prev,
+      first_message: renderTemplateText(t.greeting, bName, aName, bKey),
+    }));
+  };
+
+  const handleResetEditPrompt = () => {
+    if (!editingBiz) return;
+    const t = getBizTemplate(editingBiz);
+    const bName = editingBiz.name || '{{business_name}}';
+    const aName = editingBiz.agent_name || `${bName} AI Assistant`;
+    const bKey = editingBiz.business_key || bName.toLowerCase().replace(/\s+/g, '_');
+    setEditingBiz((prev) => ({
+      ...prev,
+      system_prompt: renderTemplateText(t.system_prompt, bName, aName, bKey),
+    }));
+  };
+
   // Submit New Business
   const handleCreateBusiness = async (e) => {
     e?.preventDefault();
@@ -1101,6 +1220,7 @@ export default function BusinessesPage({ onOpenOnboarding }) {
     setCreateError('');
 
     try {
+      const isAgentNow = newBiz.setup_agent_now !== false;
       const payload = {
         name: newBiz.name.trim(),
         type: newBiz.type || 'Service and Appointment Booking',
@@ -1112,14 +1232,18 @@ export default function BusinessesPage({ onOpenOnboarding }) {
         website: newBiz.website?.trim() || '',
         address: newBiz.address?.trim() || '',
         description: newBiz.description?.trim() || '',
-        agent_name: newBiz.agent_name?.trim() || `${newBiz.name.trim()} AI Assistant`,
-        voice_id: newBiz.voice_id,
-        voice_name: newBiz.voice_name,
-        language: newBiz.language,
-        first_message: newBiz.greeting,
-        system_prompt: newBiz.system_prompt,
-        auto_create_agent: true,
+        auto_create_agent: isAgentNow,
       };
+
+      if (isAgentNow) {
+        payload.agent_name = newBiz.agent_name?.trim() || `${newBiz.name.trim()} AI Assistant`;
+        payload.voice_id = newBiz.voice_id;
+        payload.voice_name = newBiz.voice_name;
+        payload.language = newBiz.language;
+        payload.first_message = newBiz.greeting;
+        payload.system_prompt = newBiz.system_prompt;
+        payload.attached_tools = newBiz.attached_tools || [];
+      }
 
       const created = await apiFetch('/admin/businesses', {
         method: 'POST',
@@ -1127,25 +1251,45 @@ export default function BusinessesPage({ onOpenOnboarding }) {
       });
 
       setAddModalOpen(false);
-      setBannerNotice(`Business "${created.name}" and Voice Agent "${payload.agent_name}" successfully created with Fish Audio prompts!`);
+      if (isAgentNow) {
+        setBannerNotice(`Business "${created.name}" and Voice Agent "${payload.agent_name}" successfully created with Fish Audio prompts!`);
+      } else {
+        setBannerNotice(`Business "${created.name}" registered successfully. You can configure its AI Voice Agent anytime from Edit.`);
+      }
       loadBusinesses();
       setTimeout(() => setBannerNotice(''), 6000);
       window.dispatchEvent(new Event('scadova:updated'));
     } catch (err) {
-      setCreateError(err.message || 'Failed to create business and voice agent');
+      setCreateError(err.message || 'Failed to create business');
     } finally {
       setCreating(false);
     }
   };
 
-  const handleOpenEdit = (biz) => {
+  const handleOpenEdit = (biz, initialTab = 'profile') => {
+    const t = getBizTemplate(biz);
+    const bName = biz.name || '{{business_name}}';
+    const aName = biz.agent_name || (biz.name ? `${biz.name} AI Assistant` : (t.default_agent_role || 'Voice Assistant'));
+    const bKey = biz.business_key || bName.toLowerCase().replace(/\s+/g, '_');
+    const hasConfiguredAgent = Boolean(biz.has_agent || (biz.agent_name && (biz.fish_agent_id || biz.agent_id)));
+
     setEditingBiz({
       ...biz,
-      type: biz.type || biz.business_type || 'Service and Appointment Booking',
+      type: biz.type || biz.business_type || t.label,
       status: biz.status || 'active',
-      language: biz.language || 'en',
+      language: biz.language || t.language || 'en',
+      agent_name: biz.agent_name || aName,
+      fish_agent_id: biz.fish_agent_id || biz.agent_id || `agent_${bKey.replace(/[^a-z0-9_]/g, '').slice(0, 20)}`,
+      agent_id: biz.fish_agent_id || biz.agent_id || `agent_${bKey.replace(/[^a-z0-9_]/g, '').slice(0, 20)}`,
+      voice: biz.voice || t.voice_name || 'Serena - Executive English',
+      voice_id: biz.voice_id || t.voice_id || 'serena_exec_en',
+      prompt_version: biz.prompt_version || 'v1.0',
+      first_message: biz.first_message || renderTemplateText(t.greeting, bName, aName, bKey),
+      system_prompt: biz.system_prompt || renderTemplateText(t.system_prompt, bName, aName, bKey),
+      attached_tools: (biz.attached_tools && biz.attached_tools.length > 0) ? biz.attached_tools : [...(t.tools || [])],
+      has_agent: hasConfiguredAgent,
     });
-    setEditTab('profile');
+    setEditTab(initialTab);
     setSaveError('');
   };
 
@@ -1177,6 +1321,9 @@ export default function BusinessesPage({ onOpenOnboarding }) {
         language: editingBiz.language,
         llm: editingBiz.llm?.trim(),
         prompt_version: editingBiz.prompt_version?.trim() || 'v1.0',
+        first_message: editingBiz.first_message?.trim(),
+        system_prompt: editingBiz.system_prompt?.trim(),
+        attached_tools: editingBiz.attached_tools || [],
       };
 
       const updated = await apiFetch(`/admin/businesses/${editingBiz.id}`, {
@@ -1185,14 +1332,14 @@ export default function BusinessesPage({ onOpenOnboarding }) {
       });
 
       setBusinesses((prev) =>
-        prev.map((b) => (b.id === editingBiz.id ? { ...b, ...payload, ...(updated || {}) } : b))
+        prev.map((b) => (b.id === editingBiz.id ? { ...b, ...payload, ...(updated || {}), has_agent: true } : b))
       );
       if (selectedBiz && selectedBiz.id === editingBiz.id) {
-        setSelectedBiz((prev) => ({ ...prev, ...payload, ...(updated || {}) }));
+        setSelectedBiz((prev) => ({ ...prev, ...payload, ...(updated || {}), has_agent: true }));
       }
 
       setEditingBiz(null);
-      setBannerNotice(`Business '${payload.name}' updated successfully.`);
+      setBannerNotice(`Business '${payload.name}' and Voice Agent configuration updated successfully.`);
       setTimeout(() => setBannerNotice(''), 5000);
       window.dispatchEvent(new Event('scadova:updated'));
     } catch (err) {
@@ -1243,6 +1390,12 @@ export default function BusinessesPage({ onOpenOnboarding }) {
     } else if (type === 'profileGreeting') {
       setCopiedProfileGreeting(true);
       setTimeout(() => setCopiedProfileGreeting(false), 2000);
+    } else if (type === 'editPrompt') {
+      setCopiedEditPrompt(true);
+      setTimeout(() => setCopiedEditPrompt(false), 2000);
+    } else if (type === 'editGreeting') {
+      setCopiedEditGreeting(true);
+      setTimeout(() => setCopiedEditGreeting(false), 2000);
     }
   };
 
@@ -1347,6 +1500,36 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                             <span>•</span>
                             <Clock size={12} />
                             <span>{biz.timezone || 'UTC'}</span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                            {biz.has_agent && biz.agent_name ? (
+                              <span style={{ fontSize: 11, color: '#2563eb', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                <Bot size={12} />
+                                <span>{biz.agent_name}</span>
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEdit(biz, 'voice')}
+                                style={{
+                                  background: '#fffbeb',
+                                  color: '#b45309',
+                                  border: '1px solid #fde68a',
+                                  borderRadius: 6,
+                                  padding: '2px 7px',
+                                  fontSize: 10.5,
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 3
+                                }}
+                                title="Click to configure AI Voice Agent for this business"
+                              >
+                                <Sparkles size={10} color="#b45309" />
+                                <span>Setup Voice Agent</span>
+                              </button>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1602,110 +1785,154 @@ export default function BusinessesPage({ onOpenOnboarding }) {
 
               {profileTab === 'voice' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                  <div className="edit-section-card">
-                    <div className="edit-section-header">
-                      <h4>
-                        <Bot size={16} color="#2563eb" />
-                        Assigned Voice Agent & Runtime
+                  {!selectedBiz.has_agent && !selectedBiz.agent_name ? (
+                    <div className="edit-section-card" style={{ textAlign: 'center', padding: '36px 20px', background: '#f8fafc', border: '1.5px dashed #cbd5e1' }}>
+                      <div style={{ width: 50, height: 50, borderRadius: 12, background: '#fef3c7', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px auto' }}>
+                        <Bot size={26} color="#d97706" />
+                      </div>
+                      <h4 style={{ fontSize: 16, fontWeight: 700, color: '#0f172a', margin: '0 0 6px 0' }}>
+                        No Voice Agent Configured Yet
                       </h4>
-                      <span className="badge badge-blue">Fish Audio Live</span>
+                      <p style={{ fontSize: 13, color: '#64748b', maxWidth: 460, margin: '0 auto 20px auto', lineHeight: 1.5 }}>
+                        This business was registered without an active voice agent. You can configure its agent name, voice profile, pre-defined prompts, and router tools right now.
+                      </p>
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        onClick={() => {
+                          const target = selectedBiz;
+                          setSelectedBiz(null);
+                          handleOpenEdit(target, 'voice');
+                        }}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, margin: '0 auto' }}
+                      >
+                        <Sparkles size={16} />
+                        <span>Setup AI Voice Agent & Fish Audio</span>
+                      </button>
                     </div>
+                  ) : (
+                    <>
+                      <div className="edit-section-card">
+                        <div className="edit-section-header">
+                          <h4>
+                            <Bot size={16} color="#2563eb" />
+                            Assigned Voice Agent & Runtime
+                          </h4>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => {
+                                const target = selectedBiz;
+                                setSelectedBiz(null);
+                                handleOpenEdit(target, 'voice');
+                              }}
+                              style={{ fontSize: 11.5, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                            >
+                              <Edit3 size={12} />
+                              <span>Edit Voice Agent</span>
+                            </button>
+                            <span className="badge badge-blue">Fish Audio Live</span>
+                          </div>
+                        </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, fontSize: 13 }}>
-                      <div style={{ padding: 12, background: '#ffffff', borderRadius: 8, border: '1px solid #e2e8f0' }}>
-                        <strong style={{ color: '#64748b', fontSize: 11, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
-                          Assigned Agent Name
-                        </strong>
-                        <span style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>
-                          {selectedBiz.agent_name || `${selectedBiz.name} AI Assistant`}
-                        </span>
-                      </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, fontSize: 13 }}>
+                          <div style={{ padding: 12, background: '#ffffff', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                            <strong style={{ color: '#64748b', fontSize: 11, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                              Assigned Agent Name
+                            </strong>
+                            <span style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>
+                              {selectedBiz.agent_name || `${selectedBiz.name} AI Assistant`}
+                            </span>
+                          </div>
 
-                      <div style={{ padding: 12, background: '#ffffff', borderRadius: 8, border: '1px solid #e2e8f0' }}>
-                        <strong style={{ color: '#64748b', fontSize: 11, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
-                          Fish Audio Agent ID
-                        </strong>
-                        <code style={{ fontSize: 13, color: '#2563eb', fontWeight: 700, background: '#eff6ff', padding: '2px 6px', borderRadius: 4 }}>
-                          {selectedBiz.agent_id || selectedBiz.fish_agent_id || 'Not configured'}
-                        </code>
-                      </div>
+                          <div style={{ padding: 12, background: '#ffffff', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                            <strong style={{ color: '#64748b', fontSize: 11, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                              Fish Audio Agent ID
+                            </strong>
+                            <code style={{ fontSize: 13, color: '#2563eb', fontWeight: 700, background: '#eff6ff', padding: '2px 6px', borderRadius: 4 }}>
+                              {selectedBiz.agent_id || selectedBiz.fish_agent_id || 'Not configured'}
+                            </code>
+                          </div>
 
-                      <div style={{ padding: 12, background: '#ffffff', borderRadius: 8, border: '1px solid #e2e8f0' }}>
-                        <strong style={{ color: '#64748b', fontSize: 11, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
-                          Voice Model Profile
-                        </strong>
-                        <span style={{ fontWeight: 600, color: '#0f172a' }}>
-                          {selectedBiz.voice || 'Serena - Executive English'}
-                        </span>
-                        <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
-                          Language: {selectedBiz.language?.toUpperCase() || 'EN'}
+                          <div style={{ padding: 12, background: '#ffffff', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                            <strong style={{ color: '#64748b', fontSize: 11, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                              Voice Model Profile
+                            </strong>
+                            <span style={{ fontWeight: 600, color: '#0f172a' }}>
+                              {selectedBiz.voice || 'Serena - Executive English'}
+                            </span>
+                            <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+                              Language: {selectedBiz.language?.toUpperCase() || 'EN'}
+                            </div>
+                          </div>
+
+                          <div style={{ padding: 12, background: '#ffffff', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                            <strong style={{ color: '#64748b', fontSize: 11, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                              LLM Engine & Prompt Version
+                            </strong>
+                            <span style={{ fontWeight: 600, color: '#0f172a' }}>
+                              {selectedBiz.llm || 'Scadova Runtime / scadova-routing-v1'}
+                            </span>
+                            <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+                              Version: {selectedBiz.prompt_version || 'v1.0'}
+                            </div>
+                          </div>
                         </div>
                       </div>
 
-                      <div style={{ padding: 12, background: '#ffffff', borderRadius: 8, border: '1px solid #e2e8f0' }}>
-                        <strong style={{ color: '#64748b', fontSize: 11, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
-                          LLM Engine & Prompt Version
-                        </strong>
-                        <span style={{ fontWeight: 600, color: '#0f172a' }}>
-                          {selectedBiz.llm || 'Scadova Runtime / scadova-routing-v1'}
-                        </span>
-                        <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
-                          Version: {selectedBiz.prompt_version || 'v1.0'}
+                      {/* LIVE FIRST MESSAGE / GREETING */}
+                      <div className="edit-section-card">
+                        <div className="edit-section-header">
+                          <h4>
+                            <Sparkles size={16} color="#eab308" />
+                            First Message / Opening Greeting
+                          </h4>
+                          <button
+                            type="button"
+                            className="copy-badge-btn"
+                            onClick={() => copyToClipboard(selectedBiz.first_message || (templates.service_and_appointment?.greeting ? renderTemplateText(templates.service_and_appointment.greeting, selectedBiz.name, selectedBiz.agent_name) : ''), 'profileGreeting')}
+                            style={{ color: '#2563eb', background: '#eff6ff', borderColor: '#bfdbfe' }}
+                          >
+                            {copiedProfileGreeting ? <CheckCheck size={13} color="#16a34a" /> : <Copy size={13} />}
+                            <span>{copiedProfileGreeting ? 'Copied!' : 'Copy Greeting'}</span>
+                          </button>
+                        </div>
+                        <div style={{ padding: '12px 16px', background: '#ffffff', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 13, color: '#1e293b', fontStyle: 'italic', lineHeight: 1.5 }}>
+                          "{selectedBiz.first_message || (templates.service_and_appointment?.greeting ? renderTemplateText(templates.service_and_appointment.greeting, selectedBiz.name, selectedBiz.agent_name) : `Hi, welcome to ${selectedBiz.name}. I am your AI voice assistant. How can I help you today?`)}"
                         </div>
                       </div>
-                    </div>
-                  </div>
 
-                  {/* LIVE FIRST MESSAGE / GREETING */}
-                  <div className="edit-section-card">
-                    <div className="edit-section-header">
-                      <h4>
-                        <Sparkles size={16} color="#eab308" />
-                        First Message / Opening Greeting
-                      </h4>
-                      <button
-                        type="button"
-                        className="copy-badge-btn"
-                        onClick={() => copyToClipboard(selectedBiz.first_message || (templates.service_and_appointment?.greeting ? renderTemplateText(templates.service_and_appointment.greeting, selectedBiz.name, selectedBiz.agent_name) : ''), 'profileGreeting')}
-                        style={{ color: '#2563eb', background: '#eff6ff', borderColor: '#bfdbfe' }}
-                      >
-                        {copiedProfileGreeting ? <CheckCheck size={13} color="#16a34a" /> : <Copy size={13} />}
-                        <span>{copiedProfileGreeting ? 'Copied!' : 'Copy Greeting'}</span>
-                      </button>
-                    </div>
-                    <div style={{ padding: '12px 16px', background: '#ffffff', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 13, color: '#1e293b', fontStyle: 'italic', lineHeight: 1.5 }}>
-                      "{selectedBiz.first_message || (templates.service_and_appointment?.greeting ? renderTemplateText(templates.service_and_appointment.greeting, selectedBiz.name, selectedBiz.agent_name) : `Hi, welcome to ${selectedBiz.name}. I am your AI voice assistant. How can I help you today?`)}"
-                    </div>
-                  </div>
+                      {/* LIVE SYSTEM PROMPT (FISH AUDIO READY) */}
+                      <div className="edit-section-card">
+                        <div className="edit-section-header">
+                          <h4>
+                            <Code2 size={16} color="#2563eb" />
+                            Live System Prompt (Fish Audio Parameterized)
+                          </h4>
+                          <button
+                            type="button"
+                            className="copy-badge-btn"
+                            onClick={() => copyToClipboard(selectedBiz.system_prompt || (templates.service_and_appointment?.system_prompt ? renderTemplateText(templates.service_and_appointment.system_prompt, selectedBiz.name, selectedBiz.agent_name, selectedBiz.business_key || selectedBiz.id) : ''), 'profilePrompt')}
+                            style={{ color: '#2563eb', background: '#eff6ff', borderColor: '#bfdbfe' }}
+                          >
+                            {copiedProfilePrompt ? <CheckCheck size={13} color="#16a34a" /> : <Copy size={13} />}
+                            <span>{copiedProfilePrompt ? 'Copied!' : 'Copy System Prompt'}</span>
+                          </button>
+                        </div>
 
-                  {/* LIVE SYSTEM PROMPT (FISH AUDIO READY) */}
-                  <div className="edit-section-card">
-                    <div className="edit-section-header">
-                      <h4>
-                        <Code2 size={16} color="#2563eb" />
-                        Live System Prompt (Fish Audio Parameterized)
-                      </h4>
-                      <button
-                        type="button"
-                        className="copy-badge-btn"
-                        onClick={() => copyToClipboard(selectedBiz.system_prompt || (templates.service_and_appointment?.system_prompt ? renderTemplateText(templates.service_and_appointment.system_prompt, selectedBiz.name, selectedBiz.agent_name, selectedBiz.business_key || selectedBiz.id) : ''), 'profilePrompt')}
-                        style={{ color: '#2563eb', background: '#eff6ff', borderColor: '#bfdbfe' }}
-                      >
-                        {copiedProfilePrompt ? <CheckCheck size={13} color="#16a34a" /> : <Copy size={13} />}
-                        <span>{copiedProfilePrompt ? 'Copied!' : 'Copy System Prompt'}</span>
-                      </button>
-                    </div>
-
-                    <div className="prompt-preview-container">
-                      <div className="prompt-preview-header">
-                        <span>Fish Audio Live System Prompt • {selectedBiz.prompt_version || 'v1.0'}</span>
-                        <span style={{ fontSize: 10, color: '#10b981', fontWeight: 700 }}>● CONNECTED TO FASTAPI TOOLS</span>
+                        <div className="prompt-preview-container">
+                          <div className="prompt-preview-header">
+                            <span>Fish Audio Live System Prompt • {selectedBiz.prompt_version || 'v1.0'}</span>
+                            <span style={{ fontSize: 10, color: '#10b981', fontWeight: 700 }}>● CONNECTED TO FASTAPI TOOLS</span>
+                          </div>
+                          <pre className="prompt-preview-body">
+                            {selectedBiz.system_prompt || (templates.service_and_appointment?.system_prompt ? renderTemplateText(templates.service_and_appointment.system_prompt, selectedBiz.name, selectedBiz.agent_name, selectedBiz.business_key || selectedBiz.id) : 'Pre-configured system prompt active.')}
+                          </pre>
+                        </div>
                       </div>
-                      <pre className="prompt-preview-body">
-                        {selectedBiz.system_prompt || (templates.service_and_appointment?.system_prompt ? renderTemplateText(templates.service_and_appointment.system_prompt, selectedBiz.name, selectedBiz.agent_name, selectedBiz.business_key || selectedBiz.id) : 'Pre-configured system prompt active.')}
-                      </pre>
-                    </div>
-                  </div>
+                    </>
+                  )}
                 </div>
               )}
 
@@ -1975,6 +2202,59 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                         />
                       </div>
                     </div>
+
+                    {/* SETUP VOICE AGENT CHOICE CARD */}
+                    <div className="edit-section-card" style={{ border: '1.5px solid #dbeafe', background: '#f8fafc' }}>
+                      <div className="edit-section-header">
+                        <h4>
+                          <Bot size={16} color="#2563eb" />
+                          AI Voice Agent Setup
+                        </h4>
+                        <span className="badge badge-blue">Fish Audio Integration</span>
+                      </div>
+                      <p style={{ fontSize: 12.5, color: '#475569', margin: '4px 0 12px 0', lineHeight: 1.4 }}>
+                        Configure the automated AI voice agent right now with live Fish Audio voices and router tools, or register the business first and set up the agent later.
+                      </p>
+
+                      <div className="setup-choice-grid">
+                        <div
+                          className={`setup-choice-card ${newBiz.setup_agent_now ? 'selected' : ''}`}
+                          onClick={() => setNewBiz((prev) => ({ ...prev, setup_agent_now: true }))}
+                        >
+                          <div className="setup-choice-radio">
+                            {newBiz.setup_agent_now && <div className="setup-choice-radio-inner" />}
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ fontWeight: 700, fontSize: 13, color: '#0f172a' }}>
+                                Set up AI Voice Agent now
+                              </span>
+                              <span className="badge badge-green" style={{ fontSize: 10, padding: '1px 6px' }}>Recommended</span>
+                            </div>
+                            <p style={{ fontSize: 11.5, color: '#64748b', margin: '4px 0 0 0', lineHeight: 1.4 }}>
+                              Configures agent name, first greeting, Fish Audio voice profile, live system prompt, and auto-selects all {currentTemplate.tools?.length || 0} router tools.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div
+                          className={`setup-choice-card ${!newBiz.setup_agent_now ? 'selected' : ''}`}
+                          onClick={() => setNewBiz((prev) => ({ ...prev, setup_agent_now: false }))}
+                        >
+                          <div className="setup-choice-radio">
+                            {!newBiz.setup_agent_now && <div className="setup-choice-radio-inner" />}
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <span style={{ fontWeight: 700, fontSize: 13, color: '#0f172a' }}>
+                              Set up Voice Agent later
+                            </span>
+                            <p style={{ fontSize: 11.5, color: '#64748b', margin: '4px 0 0 0', lineHeight: 1.4 }}>
+                              Save business details immediately without provisioning a voice agent. You can configure the agent anytime in the Edit menu.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 )}
 
@@ -2038,17 +2318,56 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                         </div>
                       </div>
 
-                      <div style={{ marginTop: 8 }}>
-                        <label style={{ fontSize: 11.5, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>
-                          Attached Router Tools (Auto-Injected)
-                        </label>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                          {(currentTemplate.tools || []).map((tool) => (
-                            <span key={tool} className="tool-chip">
-                              ⚙️ {tool}
-                            </span>
-                          ))}
+                      {/* INTERACTIVE ROUTER TOOLS CHECKBOXES */}
+                      <div style={{ marginTop: 14 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                          <label style={{ fontSize: 11.5, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>
+                            Attached Router Tools ({newBiz.attached_tools?.length || 0} / {currentTemplate.tools?.length || 0} Enabled)
+                          </label>
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <button
+                              type="button"
+                              onClick={handleSelectAllNewBizTools}
+                              className="btn btn-secondary btn-sm"
+                              style={{ fontSize: 10.5, padding: '2px 8px' }}
+                            >
+                              Select All
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleClearAllNewBizTools}
+                              className="btn btn-secondary btn-sm"
+                              style={{ fontSize: 10.5, padding: '2px 8px' }}
+                            >
+                              Clear All
+                            </button>
+                          </div>
                         </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                          {(currentTemplate.tools || []).map((tool) => {
+                            const isChecked = (newBiz.attached_tools || []).includes(tool);
+                            return (
+                              <label
+                                key={tool}
+                                className={`tool-checkbox-item ${isChecked ? 'checked' : ''}`}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  handleToggleNewBizTool(tool);
+                                }}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => {}}
+                                />
+                                <span>⚙️ {tool}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                        <small style={{ display: 'block', marginTop: 6, color: '#64748b', fontSize: 11 }}>
+                          All tools for this industry are selected by default for live caller execution. Uncheck any tools you wish to disable.
+                        </small>
                       </div>
                     </div>
 
@@ -2059,15 +2378,27 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                           <Sparkles size={16} color="#eab308" />
                           First Message / Greeting (Pre-defined)
                         </h4>
-                        <button
-                          type="button"
-                          className="copy-badge-btn"
-                          onClick={() => copyToClipboard(newBiz.greeting, 'greeting')}
-                          style={{ color: '#2563eb', background: '#eff6ff', borderColor: '#bfdbfe' }}
-                        >
-                          {copiedGreeting ? <CheckCheck size={13} color="#16a34a" /> : <Copy size={13} />}
-                          <span>{copiedGreeting ? 'Copied!' : 'Copy'}</span>
-                        </button>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <button
+                            type="button"
+                            className="copy-badge-btn"
+                            onClick={handleResetAddGreeting}
+                            title="Reset greeting to industry default"
+                            style={{ color: '#475569' }}
+                          >
+                            <RotateCcw size={12} />
+                            <span>Reset Default</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="copy-badge-btn"
+                            onClick={() => copyToClipboard(newBiz.greeting, 'greeting')}
+                            style={{ color: '#2563eb', background: '#eff6ff', borderColor: '#bfdbfe' }}
+                          >
+                            {copiedGreeting ? <CheckCheck size={13} color="#16a34a" /> : <Copy size={13} />}
+                            <span>{copiedGreeting ? 'Copied!' : 'Copy'}</span>
+                          </button>
+                        </div>
                       </div>
 
                       <div className="edit-field-group">
@@ -2090,6 +2421,16 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                           Pre-defined System Prompt (Fish Audio Ready)
                         </h4>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <button
+                            type="button"
+                            className="copy-badge-btn"
+                            onClick={handleResetAddPrompt}
+                            title="Reset system prompt to industry default"
+                            style={{ color: '#475569' }}
+                          >
+                            <RotateCcw size={12} />
+                            <span>Reset Default</span>
+                          </button>
                           <button
                             type="button"
                             className="copy-badge-btn"
@@ -2129,38 +2470,46 @@ export default function BusinessesPage({ onOpenOnboarding }) {
                   >
                     Cancel
                   </button>
-                  {onOpenOnboarding && (
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm"
-                      onClick={() => {
-                        setAddModalOpen(false);
-                        onOpenOnboarding({ mode: 'business' });
-                      }}
-                      style={{ fontSize: 11.5, color: '#64748b' }}
-                    >
-                      Use multi-step wizard instead
-                    </button>
-                  )}
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   {addTab === 'business' ? (
-                    <button
-                      type="button"
-                      className="btn btn-primary"
-                      onClick={() => {
-                        if (!newBiz.name.trim()) {
-                          setCreateError('Please enter a business name first.');
-                          return;
-                        }
-                        setCreateError('');
-                        setAddTab('agent');
-                      }}
-                    >
-                      <span>Next: Voice Agent & Prompt</span>
-                      <span>→</span>
-                    </button>
+                    newBiz.setup_agent_now ? (
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        onClick={() => {
+                          if (!newBiz.name.trim()) {
+                            setCreateError('Please enter a business name first.');
+                            return;
+                          }
+                          setCreateError('');
+                          setAddTab('agent');
+                        }}
+                      >
+                        <span>Next: Voice Agent & Tools</span>
+                        <span>→</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="submit"
+                        className="btn btn-primary"
+                        disabled={creating}
+                        style={{ minWidth: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                      >
+                        {creating ? (
+                          <>
+                            <span className="spin">⟳</span>
+                            <span>Registering Business...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Check size={16} />
+                            <span>Create Business (Skip Voice Agent)</span>
+                          </>
+                        )}
+                      </button>
+                    )
                   ) : (
                     <>
                       <button
@@ -2202,7 +2551,7 @@ export default function BusinessesPage({ onOpenOnboarding }) {
       {/* ============================================================ */}
       {editingBiz && (
         <div className="modal-overlay">
-          <div className="edit-dialog" role="dialog" aria-modal="true">
+          <div className="edit-dialog" style={{ width: 'min(920px, 95vw)', maxWidth: 920 }} role="dialog" aria-modal="true">
             <div className="modal-header" style={{ padding: '20px 24px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <div style={{ 
@@ -2267,7 +2616,7 @@ export default function BusinessesPage({ onOpenOnboarding }) {
             </div>
 
             <form onSubmit={handleSaveEdit}>
-              <div className="modal-body" style={{ padding: '24px', overflowY: 'auto' }}>
+              <div className="modal-body" style={{ padding: '24px', overflowY: 'auto', maxHeight: '65vh' }}>
                 {saveError && (
                   <div className="notice error" style={{ marginBottom: 16 }}>
                     {saveError}
@@ -2421,67 +2770,233 @@ export default function BusinessesPage({ onOpenOnboarding }) {
 
                 {editTab === 'voice' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-                      <div className="edit-field-group">
-                        <label>Assigned Agent Name</label>
-                        <input
-                          type="text"
-                          className="form-input"
-                          value={editingBiz.agent_name || ''}
-                          onChange={(e) => setEditingBiz({ ...editingBiz, agent_name: e.target.value })}
-                        />
+                    {!editingBiz.has_agent && (
+                      <div className="notice warning" style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4, background: '#fffbeb', border: '1px solid #fde68a', color: '#b45309', padding: '12px 16px', borderRadius: 8 }}>
+                        <Sparkles size={18} color="#d97706" style={{ flexShrink: 0 }} />
+                        <div style={{ fontSize: 13 }}>
+                          <strong>AI Voice Agent Not Configured Yet:</strong>
+                          <span style={{ marginLeft: 6 }}>
+                            This business was registered without an active voice agent. Fill out the parameters below to configure and provision its live agent with Fish Audio tools and prompts.
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="edit-section-card">
+                      <div className="edit-section-header">
+                        <h4>
+                          <Bot size={16} color="#2563eb" />
+                          Voice Agent Identity & Speech Profile
+                        </h4>
+                        <span className="badge badge-green">Fish Audio Runtime</span>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 14 }}>
+                        <div className="edit-field-group">
+                          <label>Assigned Agent Name *</label>
+                          <input
+                            type="text"
+                            className="form-input"
+                            value={editingBiz.agent_name || ''}
+                            onChange={(e) => setEditingBiz({ ...editingBiz, agent_name: e.target.value })}
+                            required
+                          />
+                        </div>
+
+                        <div className="edit-field-group">
+                          <label>Fish Audio Agent ID</label>
+                          <input
+                            type="text"
+                            className="form-input"
+                            placeholder="agent_xxxxxxxxxxxx"
+                            value={editingBiz.fish_agent_id || editingBiz.agent_id || ''}
+                            onChange={(e) => setEditingBiz({ ...editingBiz, fish_agent_id: e.target.value, agent_id: e.target.value })}
+                          />
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: 14, marginTop: 12 }}>
+                        <div className="edit-field-group">
+                          <label>Voice Model Profile</label>
+                          <select
+                            className="form-select"
+                            value={editingBiz.voice || 'Serena - Executive English'}
+                            onChange={(e) => setEditingBiz({ ...editingBiz, voice: e.target.value })}
+                          >
+                            <option value="Serena - Executive English">Serena - Executive English</option>
+                            <option value="Marcus - Conversational English">Marcus - Conversational English</option>
+                            <option value="Sophia - Warm Healthcare English">Sophia - Warm Healthcare English</option>
+                            <option value="Ravi - Warm & Professional">Ravi - Warm & Professional</option>
+                          </select>
+                        </div>
+
+                        <div className="edit-field-group">
+                          <label>Language</label>
+                          <select
+                            className="form-select"
+                            value={editingBiz.language || 'en'}
+                            onChange={(e) => setEditingBiz({ ...editingBiz, language: e.target.value })}
+                          >
+                            <option value="en">English (EN)</option>
+                            <option value="te">Telugu (TE)</option>
+                            <option value="es">Spanish (ES)</option>
+                          </select>
+                        </div>
+
+                        <div className="edit-field-group">
+                          <label>Prompt Version Label</label>
+                          <input
+                            type="text"
+                            className="form-input"
+                            placeholder="v1.0"
+                            value={editingBiz.prompt_version || 'v1.0'}
+                            onChange={(e) => setEditingBiz({ ...editingBiz, prompt_version: e.target.value })}
+                          />
+                        </div>
+                      </div>
+
+                      {/* INTERACTIVE ROUTER TOOLS CHECKBOXES */}
+                      {(() => {
+                        const editTemplate = getBizTemplate(editingBiz);
+                        const availableTools = editTemplate.tools || [];
+                        return (
+                          <div style={{ marginTop: 14 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                              <label style={{ fontSize: 11.5, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>
+                                Attached Router Tools ({(editingBiz.attached_tools || []).length} / {availableTools.length} Active)
+                              </label>
+                              <div style={{ display: 'flex', gap: 8 }}>
+                                <button
+                                  type="button"
+                                  onClick={handleSelectAllEditTools}
+                                  className="btn btn-secondary btn-sm"
+                                  style={{ fontSize: 10.5, padding: '2px 8px' }}
+                                >
+                                  Select All
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={handleClearAllEditTools}
+                                  className="btn btn-secondary btn-sm"
+                                  style={{ fontSize: 10.5, padding: '2px 8px' }}
+                                >
+                                  Clear All
+                                </button>
+                              </div>
+                            </div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                              {availableTools.map((tool) => {
+                                const isChecked = (editingBiz.attached_tools || []).includes(tool);
+                                return (
+                                  <label
+                                    key={tool}
+                                    className={`tool-checkbox-item ${isChecked ? 'checked' : ''}`}
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      handleToggleEditTool(tool);
+                                    }}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      onChange={() => {}}
+                                    />
+                                    <span>⚙️ {tool}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                            <small style={{ display: 'block', marginTop: 6, color: '#64748b', fontSize: 11 }}>
+                              Enabled tools allow callers to query live database records and execute booking or intake actions.
+                            </small>
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    {/* EDITABLE FIRST MESSAGE / GREETING */}
+                    <div className="edit-section-card">
+                      <div className="edit-section-header">
+                        <h4>
+                          <Sparkles size={16} color="#eab308" />
+                          First Message / Greeting (Pre-defined)
+                        </h4>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <button
+                            type="button"
+                            className="copy-badge-btn"
+                            onClick={handleResetEditGreeting}
+                            title="Reset greeting to template default"
+                            style={{ color: '#475569' }}
+                          >
+                            <RotateCcw size={12} />
+                            <span>Reset Default</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="copy-badge-btn"
+                            onClick={() => copyToClipboard(editingBiz.first_message, 'editGreeting')}
+                            style={{ color: '#2563eb', background: '#eff6ff', borderColor: '#bfdbfe' }}
+                          >
+                            {copiedEditGreeting ? <CheckCheck size={13} color="#16a34a" /> : <Copy size={13} />}
+                            <span>{copiedEditGreeting ? 'Copied!' : 'Copy'}</span>
+                          </button>
+                        </div>
                       </div>
 
                       <div className="edit-field-group">
-                        <label>Fish Audio Agent ID</label>
-                        <input
-                          type="text"
-                          className="form-input"
-                          placeholder="agent_xxxxxxxxxxxx"
-                          value={editingBiz.fish_agent_id || editingBiz.agent_id || ''}
-                          onChange={(e) => setEditingBiz({ ...editingBiz, fish_agent_id: e.target.value, agent_id: e.target.value })}
+                        <textarea
+                          rows={3}
+                          className="form-textarea"
+                          value={editingBiz.first_message || ''}
+                          onChange={(e) => setEditingBiz({ ...editingBiz, first_message: e.target.value })}
+                          style={{ fontSize: 13, lineHeight: 1.5 }}
                         />
+                        <small>Spoken immediately when a caller reaches the voice agent.</small>
                       </div>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-                      <div className="edit-field-group">
-                        <label>Voice Model Profile</label>
-                        <select
-                          className="form-select"
-                          value={editingBiz.voice || 'Serena - Executive English'}
-                          onChange={(e) => setEditingBiz({ ...editingBiz, voice: e.target.value })}
-                        >
-                          <option value="Serena - Executive English">Serena - Executive English</option>
-                          <option value="Marcus - Conversational English">Marcus - Conversational English</option>
-                          <option value="Sophia - Warm Healthcare English">Sophia - Warm Healthcare English</option>
-                          <option value="Ravi - Warm & Professional">Ravi - Warm & Professional</option>
-                        </select>
+                    {/* EDITABLE SYSTEM PROMPT (FISH AUDIO READY) */}
+                    <div className="edit-section-card">
+                      <div className="edit-section-header">
+                        <h4>
+                          <Code2 size={16} color="#2563eb" />
+                          Pre-defined System Prompt (Fish Audio Ready)
+                        </h4>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <button
+                            type="button"
+                            className="copy-badge-btn"
+                            onClick={handleResetEditPrompt}
+                            title="Reset system prompt to template default"
+                            style={{ color: '#475569' }}
+                          >
+                            <RotateCcw size={12} />
+                            <span>Reset Default</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="copy-badge-btn"
+                            onClick={() => copyToClipboard(editingBiz.system_prompt, 'editPrompt')}
+                            style={{ color: '#2563eb', background: '#eff6ff', borderColor: '#bfdbfe' }}
+                          >
+                            {copiedEditPrompt ? <CheckCheck size={13} color="#16a34a" /> : <Copy size={13} />}
+                            <span>{copiedEditPrompt ? 'Copied!' : 'Copy Prompt'}</span>
+                          </button>
+                        </div>
                       </div>
 
                       <div className="edit-field-group">
-                        <label>Language</label>
-                        <select
-                          className="form-select"
-                          value={editingBiz.language || 'en'}
-                          onChange={(e) => setEditingBiz({ ...editingBiz, language: e.target.value })}
-                        >
-                          <option value="en">English (EN)</option>
-                          <option value="te">Telugu (TE)</option>
-                          <option value="es">Spanish (ES)</option>
-                        </select>
+                        <textarea
+                          rows={12}
+                          className="prompt-editor-box"
+                          value={editingBiz.system_prompt || ''}
+                          onChange={(e) => setEditingBiz({ ...editingBiz, system_prompt: e.target.value })}
+                        />
+                        <small>
+                          Customizable system prompt defining caller rules, data validation, and tool interaction behavior.
+                        </small>
                       </div>
-                    </div>
-
-                    <div className="edit-field-group">
-                      <label>Prompt Version Label</label>
-                      <input
-                        type="text"
-                        className="form-input"
-                        placeholder="v1.0"
-                        value={editingBiz.prompt_version || 'v1.0'}
-                        onChange={(e) => setEditingBiz({ ...editingBiz, prompt_version: e.target.value })}
-                      />
                     </div>
                   </div>
                 )}
