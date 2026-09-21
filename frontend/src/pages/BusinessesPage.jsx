@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { 
   Plus, 
   Search, 
@@ -1037,7 +1037,7 @@ export default function BusinessesPage({ onOpenOnboarding }) {
   }, []);
 
   // Initialize New Business Form
-  const handleOpenAdd = () => {
+  const handleOpenAdd = useCallback(() => {
     const defaultTemplate = templates.service_and_appointment || DEFAULT_TEMPLATES.service_and_appointment;
     const defaultName = '';
     const defaultAgent = 'Appointment Specialist AI';
@@ -1067,7 +1067,14 @@ export default function BusinessesPage({ onOpenOnboarding }) {
     setAddTab('business');
     setCreateError('');
     setAddModalOpen(true);
-  };
+  }, [templates]);
+
+  // Listen for global open event from top Header Add Business button
+  useEffect(() => {
+    const onOpenAddEvent = () => handleOpenAdd();
+    window.addEventListener('scadova:open-add-business', onOpenAddEvent);
+    return () => window.removeEventListener('scadova:open-add-business', onOpenAddEvent);
+  }, [handleOpenAdd]);
 
   // Handle changing industry in Add modal
   const handleIndustryChange = (newIndustryKey) => {
@@ -1412,17 +1419,11 @@ export default function BusinessesPage({ onOpenOnboarding }) {
     <div>
       {/* HEADER BAR */}
       <div className="card" style={{ marginBottom: 20 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 14 }}>
-          <div>
-            <h2 style={{ fontSize: 18, fontWeight: 800, color: '#0f172a' }}>Businesses Management</h2>
-            <p className="card-subtitle">
-              Configured enterprise entities, department routing, and live voice operations.
-            </p>
-          </div>
-          <button className="btn btn-yellow" onClick={handleOpenAdd}>
-            <Plus size={16} />
-            <span>+ Add New Business</span>
-          </button>
+        <div>
+          <h2 style={{ fontSize: 18, fontWeight: 800, color: '#0f172a' }}>Businesses Management</h2>
+          <p className="card-subtitle">
+            Configured enterprise entities, department routing, and live voice operations.
+          </p>
         </div>
 
         {bannerNotice && (

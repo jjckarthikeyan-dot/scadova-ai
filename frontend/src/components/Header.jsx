@@ -1,9 +1,13 @@
 import { Plus } from 'lucide-react';
 import { useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { apiFetch } from "../api";
 
 export default function Header({ title, subtitle, onOpenOnboarding }) {
   const [connection, setConnection] = useState("Checking backend");
+  const location = useLocation();
+  const navigate = useNavigate();
+
   useEffect(() => {
     let active = true;
     apiFetch("/health")
@@ -17,6 +21,18 @@ export default function Header({ title, subtitle, onOpenOnboarding }) {
       active = false;
     };
   }, [title]);
+
+  const handleAddClick = () => {
+    if (location.pathname === '/businesses') {
+      window.dispatchEvent(new Event('scadova:open-add-business'));
+    } else {
+      navigate('/businesses');
+      setTimeout(() => {
+        window.dispatchEvent(new Event('scadova:open-add-business'));
+      }, 100);
+    }
+  };
+
   return (
     <header className="header">
       <div className="header-left">
@@ -41,8 +57,8 @@ export default function Header({ title, subtitle, onOpenOnboarding }) {
 
         <button
           className="btn btn-yellow"
-          onClick={onOpenOnboarding}
-          title="Onboard a new business and local voice agent"
+          onClick={handleAddClick}
+          title="Register new business and AI voice agent"
         >
           <Plus size={17} />
           <span>Add business</span>
