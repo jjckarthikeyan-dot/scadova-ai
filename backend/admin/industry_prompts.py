@@ -831,6 +831,7 @@ AVAILABLE TOOLS
 - get_loan_products
 - get_loan_product_details
 - create_loan_application
+- update_employment
 - update_personal_loan
 - update_business_loan
 - update_used_car_loan
@@ -931,6 +932,7 @@ INDUSTRY_TEMPLATES: Dict[str, Dict[str, Any]] = {
             "get_loan_products",
             "get_loan_product_details",
             "create_loan_application",
+            "update_employment",
             "update_personal_loan",
             "update_business_loan",
             "update_used_car_loan",

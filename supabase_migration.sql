@@ -21,6 +21,8 @@ CREATE TABLE IF NOT EXISTS loan_applications (
     age INTEGER,
     city TEXT,
     preferred_language TEXT DEFAULT 'English',
+    source TEXT DEFAULT 'voice_agent',
+    sarvam_interaction_id TEXT UNIQUE,
     requested_amount NUMERIC,
     preferred_tenure_months INTEGER,
     loan_purpose TEXT,
@@ -45,13 +47,42 @@ ALTER TABLE loan_applications
     ADD COLUMN IF NOT EXISTS age INTEGER,
     ADD COLUMN IF NOT EXISTS city TEXT,
     ADD COLUMN IF NOT EXISTS preferred_language TEXT DEFAULT 'English',
+    ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'voice_agent',
+    ADD COLUMN IF NOT EXISTS sarvam_interaction_id TEXT,
     ADD COLUMN IF NOT EXISTS requested_amount NUMERIC,
     ADD COLUMN IF NOT EXISTS preferred_tenure_months INTEGER,
     ADD COLUMN IF NOT EXISTS loan_purpose TEXT,
     ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'DRAFT',
     ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
 
--- 3. Personal Loan Profiles Table
+CREATE UNIQUE INDEX IF NOT EXISTS idx_loan_applications_sarvam_id 
+    ON loan_applications(sarvam_interaction_id) 
+    WHERE sarvam_interaction_id IS NOT NULL;
+
+-- 3. Employment Profiles Table (Salaried & Self-Employed)
+CREATE TABLE IF NOT EXISTS employment_profiles (
+    id BIGSERIAL PRIMARY KEY,
+    application_id BIGINT REFERENCES loan_applications(id) ON DELETE CASCADE UNIQUE,
+    employment_type TEXT NOT NULL,
+    company_name TEXT,
+    designation TEXT,
+    industry_type TEXT,
+    total_experience_years NUMERIC,
+    company_joining_date DATE,
+    gross_monthly_salary NUMERIC,
+    net_monthly_salary NUMERIC,
+    annual_income NUMERIC,
+    salary_bank_name TEXT,
+    business_name TEXT,
+    business_nature TEXT,
+    business_start_year INTEGER,
+    business_vintage_years NUMERIC,
+    monthly_business_income NUMERIC,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- 4. Personal Loan Profiles Table
 CREATE TABLE IF NOT EXISTS personal_loan_profiles (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     application_id UUID REFERENCES loan_applications(id) ON DELETE CASCADE UNIQUE,
@@ -218,3 +249,48 @@ CREATE TABLE IF NOT EXISTS sarvam_webhooks (
 CREATE INDEX IF NOT EXISTS idx_loan_applications_mobile ON loan_applications(phone_number, mobile_number);
 CREATE INDEX IF NOT EXISTS idx_callbacks_status ON callbacks(status);
 CREATE INDEX IF NOT EXISTS idx_call_sessions_sarvam_call_id ON call_sessions(sarvam_call_id);
+
+-- 9. SCHEMA MIGRATION HELPERS: Align application_id across all tables to BIGINT
+-- If you created tables previously with UUID application_id, run the statements below:
+DO $$ 
+BEGIN
+    -- Fix used_car_loan_profiles application_id if UUID
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'used_car_loan_profiles' AND column_name = 'application_id' AND data_type = 'uuid'
+    ) THEN
+        ALTER TABLE used_car_loan_profiles DROP CONSTRAINT IF EXISTS used_car_loan_profiles_application_id_key;
+        ALTER TABLE used_car_loan_profiles DROP CONSTRAINT IF EXISTS used_car_loan_profiles_application_id_fkey;
+        ALTER TABLE used_car_loan_profiles ALTER COLUMN application_id TYPE BIGINT USING (
+            CASE WHEN application_id IS NULL THEN NULL ELSE ('x' || lpad(replace(application_id::text, '-', ''), 16, '0'))::bit(64)::bigint END
+        );
+        ALTER TABLE used_car_loan_profiles ADD CONSTRAINT used_car_loan_profiles_application_id_key UNIQUE (application_id);
+        ALTER TABLE used_car_loan_profiles ADD CONSTRAINT used_car_loan_profiles_application_id_fkey FOREIGN KEY (application_id) REFERENCES loan_applications(id) ON DELETE CASCADE;
+    END IF;
+
+    -- Fix business_loan_profiles application_id if UUID
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'business_loan_profiles' AND column_name = 'application_id' AND data_type = 'uuid'
+    ) THEN
+        ALTER TABLE business_loan_profiles DROP CONSTRAINT IF EXISTS business_loan_profiles_application_id_key;
+        ALTER TABLE business_loan_profiles DROP CONSTRAINT IF EXISTS business_loan_profiles_application_id_fkey;
+        ALTER TABLE business_loan_profiles ALTER COLUMN application_id TYPE BIGINT USING (
+            CASE WHEN application_id IS NULL THEN NULL ELSE ('x' || lpad(replace(application_id::text, '-', ''), 16, '0'))::bit(64)::bigint END
+        );
+        ALTER TABLE business_loan_profiles ADD CONSTRAINT business_loan_profiles_application_id_key UNIQUE (application_id);
+        ALTER TABLE business_loan_profiles ADD CONSTRAINT business_loan_profiles_application_id_fkey FOREIGN KEY (application_id) REFERENCES loan_applications(id) ON DELETE CASCADE;
+    END IF;
+
+    -- Fix loan_callbacks application_id if UUID
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'loan_callbacks' AND column_name = 'application_id' AND data_type = 'uuid'
+    ) THEN
+        ALTER TABLE loan_callbacks DROP CONSTRAINT IF EXISTS loan_callbacks_application_id_fkey;
+        ALTER TABLE loan_callbacks ALTER COLUMN application_id TYPE BIGINT USING (
+            CASE WHEN application_id IS NULL THEN NULL ELSE ('x' || lpad(replace(application_id::text, '-', ''), 16, '0'))::bit(64)::bigint END
+        );
+        ALTER TABLE loan_callbacks ADD CONSTRAINT loan_callbacks_application_id_fkey FOREIGN KEY (application_id) REFERENCES loan_applications(id) ON DELETE SET NULL;
+    END IF;
+END $$;

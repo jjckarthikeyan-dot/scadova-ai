@@ -1,68 +1,232 @@
 import logging
 import uuid
+
 from typing import Any, Dict
+
 from fastapi import APIRouter, HTTPException, status
+
 from backend.core.supabase import supabase
+
 from .schemas import (
     LoanApplicationCreate,
     LoanApplicationResponse,
+
+    EmploymentProfileUpdate,
+    EmploymentProfileResponse,
+
     PersonalLoanProfileUpdate,
     PersonalLoanProfileResponse,
+
     UsedCarLoanProfileUpdate,
     UsedCarLoanProfileResponse,
+
     BusinessLoanProfileUpdate,
     BusinessLoanProfileResponse,
+
     CallbackCreate,
     CallbackResponse,
+
     EMICalculatorRequest,
     EMICalculatorResponse,
+
     FOIRCalculatorRequest,
-    FOIRCalculatorResponse
+    FOIRCalculatorResponse,
 )
 
+
 logger = logging.getLogger("loan_agency_router")
+
 
 router = APIRouter(
     prefix="/api/loan-agency",
     tags=["Loan Agency"]
 )
 
-# Whitelist of actual DB columns to prevent Swagger UI extra properties from breaking queries
-PERSONAL_LOAN_COLUMNS = {
-    'employment_type', 'company_name', 'designation', 'total_experience_years',
-    'company_joining_date', 'industry_type', 'gross_monthly_salary', 'net_monthly_salary',
-    'salary_credit_date', 'annual_income', 'other_income', 'salary_bank_name',
-    'average_monthly_balance', 'cheque_bounce_count', 'cibil_score',
-    'existing_personal_loan_emi', 'credit_card_outstanding', 'total_monthly_emi',
-    'has_overdue_payments', 'requested_amount', 'loan_purpose', 'preferred_tenure_months',
-    'balance_transfer_required', 'previous_company_details', 'company_profile',
-    'salary_credits_consistent', 'emi_bounce_count', 'bank_statement_months',
-    'existing_personal_loans', 'other_emis', 'has_settlement', 'has_writeoff',
-    'pan_available', 'aadhaar_kyc_available', 'salary_slips_available',
-    'bank_statements_available', 'form16_itr_available', 'employment_proof_available'
+
+# ============================================================
+# DATABASE COLUMN WHITELISTS
+# ============================================================
+
+EMPLOYMENT_COLUMNS = {
+    "employment_type",
+
+    # Salaried
+    "company_name",
+    "designation",
+    "industry_type",
+    "total_experience_years",
+    "company_joining_date",
+    "gross_monthly_salary",
+    "net_monthly_salary",
+    "annual_income",
+    "salary_bank_name",
+
+    # Self-employed
+    "business_name",
+    "business_nature",
+    "business_start_year",
+    "business_vintage_years",
+    "monthly_business_income",
 }
+
+
+PERSONAL_LOAN_COLUMNS = {
+    "employment_type",
+    "company_name",
+    "designation",
+    "total_experience_years",
+    "company_joining_date",
+    "industry_type",
+    "gross_monthly_salary",
+    "net_monthly_salary",
+    "salary_credit_date",
+    "annual_income",
+    "other_income",
+    "salary_bank_name",
+
+    "average_monthly_balance",
+    "cheque_bounce_count",
+    "cibil_score",
+
+    "existing_personal_loan_emi",
+    "credit_card_outstanding",
+    "total_monthly_emi",
+
+    "has_overdue_payments",
+    "requested_amount",
+    "loan_purpose",
+    "preferred_tenure_months",
+
+    "balance_transfer_required",
+    "previous_company_details",
+    "company_profile",
+
+    "salary_credits_consistent",
+    "emi_bounce_count",
+    "bank_statement_months",
+
+    "existing_personal_loans",
+    "other_emis",
+
+    "has_settlement",
+    "has_writeoff",
+
+    "pan_available",
+    "aadhaar_kyc_available",
+    "salary_slips_available",
+    "bank_statements_available",
+    "form16_itr_available",
+    "employment_proof_available",
+}
+
 
 USED_CAR_LOAN_COLUMNS = {
-    'employment_type', 'company_or_business_name', 'designation_or_business_nature',
-    'work_or_business_vintage', 'monthly_income', 'car_make', 'car_model', 'variant',
-    'manufacturing_year', 'registration_year', 'registration_number', 'fuel_type',
-    'transmission', 'current_owner_number', 'kilometers_driven', 'insurance_validity',
-    'rc_status', 'accident_history', 'current_market_value', 'valuation_report_amount',
-    'expected_purchase_price', 'seller_type', 'cibil_score', 'existing_loans',
-    'existing_emis', 'has_overdues_or_settlements', 'required_loan_amount',
-    'down_payment', 'preferred_tenure_months', 'refinance_required'
+    # Old employment fields kept temporarily
+    "employment_type",
+    "company_or_business_name",
+    "designation_or_business_nature",
+    "work_or_business_vintage",
+    "monthly_income",
+
+    # Vehicle
+    "car_make",
+    "car_model",
+    "variant",
+    "manufacturing_year",
+    "registration_year",
+    "registration_number",
+    "fuel_type",
+    "transmission",
+    "current_owner_number",
+    "kilometers_driven",
+    "insurance_validity",
+    "rc_status",
+    "accident_history",
+
+    # Valuation
+    "current_market_value",
+    "valuation_report_amount",
+    "expected_purchase_price",
+    "seller_type",
+
+    # Credit
+    "cibil_score",
+    "existing_loans",
+    "existing_emis",
+    "has_overdues_or_settlements",
+
+    # Requirement
+    "required_loan_amount",
+    "down_payment",
+    "preferred_tenure_months",
+    "refinance_required",
 }
 
+
 BUSINESS_LOAN_COLUMNS = {
-    'business_name', 'business_type', 'business_start_year', 'business_vintage_years',
-    'business_nature', 'business_address', 'gst_registered', 'udyam_registered',
-    'turnover_year_1', 'turnover_year_2', 'turnover_year_3',
-    'current_financial_year_turnover', 'monthly_average_bank_credits',
-    'existing_business_loans', 'current_outstanding', 'monthly_emi_obligations',
-    'profit_or_net_income', 'cibil_score', 'existing_loans_and_credit_cards',
-    'has_overdues', 'has_settlements', 'has_writeoffs', 'requested_amount',
-    'loan_purpose', 'preferred_tenure_months', 'liability_takeover_required'
+    "business_name",
+    "business_type",
+    "business_start_year",
+    "business_vintage_years",
+    "business_nature",
+    "business_address",
+
+    "gst_registered",
+    "udyam_registered",
+
+    "turnover_year_1",
+    "turnover_year_2",
+    "turnover_year_3",
+
+    "current_financial_year_turnover",
+    "monthly_average_bank_credits",
+
+    "existing_business_loans",
+    "current_outstanding",
+    "monthly_emi_obligations",
+    "profit_or_net_income",
+
+    "cibil_score",
+    "existing_loans_and_credit_cards",
+
+    "has_overdues",
+    "has_settlements",
+    "has_writeoffs",
+
+    "requested_amount",
+    "loan_purpose",
+    "preferred_tenure_months",
+
+    "liability_takeover_required",
 }
+
+
+# ============================================================
+# HELPER FUNCTIONS
+# ============================================================
+
+def ensure_application_exists(application_id: int) -> Dict[str, Any]:
+    """
+    Confirm that a database loan application exists before writing
+    employment/product-specific information.
+    """
+
+    response = (
+        supabase
+        .table("loan_applications")
+        .select("*")
+        .eq("id", application_id)
+        .limit(1)
+        .execute()
+    )
+
+    if not response.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Loan application {application_id} not found"
+        )
+
+    return response.data[0]
 
 
 # ============================================================
@@ -74,67 +238,148 @@ BUSINESS_LOAN_COLUMNS = {
     response_model=LoanApplicationResponse,
     status_code=status.HTTP_201_CREATED
 )
-async def create_loan_application(request: LoanApplicationCreate):
+async def create_loan_application(
+    request: LoanApplicationCreate
+):
     """
-    Create a new loan application for Personal, Used Car, or Business Loan.
+    Create one loan application.
+
+    IMPORTANT:
+
+    Sarvam interaction ID and database application ID are different.
+
+    sarvam_interaction_id:
+        identifies the Sarvam conversation/call.
+
+    id:
+        database application ID generated by Supabase.
+
+    If the same Sarvam interaction calls this endpoint more than once,
+    return the existing database application instead of creating a
+    duplicate.
     """
+
     try:
+
+        # ----------------------------------------------------
+        # 1. IDEMPOTENCY CHECK
+        # ----------------------------------------------------
+
+        if request.sarvam_interaction_id:
+
+            existing_response = (
+                supabase
+                .table("loan_applications")
+                .select("*")
+                .eq(
+                    "sarvam_interaction_id",
+                    request.sarvam_interaction_id
+                )
+                .limit(1)
+                .execute()
+            )
+
+            if existing_response.data:
+
+                existing_application = existing_response.data[0]
+
+                logger.info(
+                    "Existing loan application returned for "
+                    f"Sarvam interaction "
+                    f"{request.sarvam_interaction_id}. "
+                    f"Application ID: "
+                    f"{existing_application.get('id')}"
+                )
+
+                return existing_application
+
+
+        # ----------------------------------------------------
+        # 2. BUILD DATABASE PAYLOAD
+        # ----------------------------------------------------
+
         payload = {
             "loan_type": request.loan_type,
             "full_name": request.full_name,
             "mobile_number": request.mobile_number,
+
             "age": request.age,
             "city": request.city,
+
             "preferred_language": request.preferred_language,
             "source": request.source,
+
+            "sarvam_interaction_id":
+                request.sarvam_interaction_id,
+
+            "email": request.email,
+            "pan_number": request.pan_number,
+            "aadhaar_number": request.aadhaar_number,
+
+            "requested_amount":
+                request.requested_amount,
+
+            "preferred_tenure_months":
+                request.preferred_tenure_months,
+
+            "loan_purpose":
+                request.loan_purpose,
         }
 
-        response = supabase.table("loan_applications").insert(payload).execute()
-
-        if not response.data:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Supabase returned no data on application creation"
-            )
-
-        return response.data[0]
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"CREATE APPLICATION ERROR: {repr(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
+        # Remove None values
+        payload = {
+            key: value
+            for key, value in payload.items()
+            if value is not None
+        }
 
 
-@router.get("/applications/{application_id}")
-async def get_loan_application(application_id: int):
-    """
-    Retrieve application details by application ID.
-    """
-    try:
+        # ----------------------------------------------------
+        # 3. CREATE APPLICATION
+        # ----------------------------------------------------
+
         response = (
             supabase
             .table("loan_applications")
-            .select("*")
-            .eq("id", application_id)
+            .insert(payload)
             .execute()
         )
 
+
         if not response.data:
+
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Loan application not found"
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=(
+                    "Supabase returned no data "
+                    "when creating loan application"
+                )
             )
 
-        return response.data[0]
+
+        application = response.data[0]
+
+        logger.info(
+            "Loan application created. "
+            f"Application ID: {application.get('id')} | "
+            f"Sarvam Interaction ID: "
+            f"{request.sarvam_interaction_id}"
+        )
+
+
+        return application
+
 
     except HTTPException:
         raise
+
+
     except Exception as e:
-        logger.error(f"GET APPLICATION ERROR: {repr(e)}")
+
+        logger.exception(
+            "CREATE LOAN APPLICATION ERROR"
+        )
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
@@ -142,7 +387,264 @@ async def get_loan_application(application_id: int):
 
 
 # ============================================================
-# 2. PERSONAL LOAN PROFILE ENDPOINTS
+# GET APPLICATION
+# ============================================================
+
+@router.get(
+    "/applications/{application_id}",
+    response_model=LoanApplicationResponse
+)
+async def get_loan_application(
+    application_id: int
+):
+    """
+    Retrieve loan application using database application ID.
+    """
+
+    try:
+
+        response = (
+            supabase
+            .table("loan_applications")
+            .select("*")
+            .eq("id", application_id)
+            .limit(1)
+            .execute()
+        )
+
+
+        if not response.data:
+
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Loan application not found"
+            )
+
+
+        return response.data[0]
+
+
+    except HTTPException:
+        raise
+
+
+    except Exception as e:
+
+        logger.exception(
+            "GET LOAN APPLICATION ERROR"
+        )
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+# ============================================================
+# GET APPLICATION BY SARVAM INTERACTION
+# ============================================================
+
+@router.get(
+    "/applications/sarvam/{sarvam_interaction_id}",
+    response_model=LoanApplicationResponse
+)
+async def get_application_by_sarvam_interaction(
+    sarvam_interaction_id: str
+):
+    """
+    Useful for debugging/tracing a Sarvam interaction to its
+    database application ID.
+    """
+
+    try:
+
+        response = (
+            supabase
+            .table("loan_applications")
+            .select("*")
+            .eq(
+                "sarvam_interaction_id",
+                sarvam_interaction_id
+            )
+            .limit(1)
+            .execute()
+        )
+
+
+        if not response.data:
+
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=(
+                    "No loan application found for "
+                    "this Sarvam interaction ID"
+                )
+            )
+
+
+        return response.data[0]
+
+
+    except HTTPException:
+        raise
+
+
+    except Exception as e:
+
+        logger.exception(
+            "GET APPLICATION BY SARVAM ID ERROR"
+        )
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+# ============================================================
+# 2. COMMON EMPLOYMENT PROFILE
+# ============================================================
+
+@router.put(
+    "/employment/{application_id}",
+    response_model=EmploymentProfileResponse
+)
+async def update_employment_profile(
+    application_id: int,
+    payload: EmploymentProfileUpdate
+):
+    """
+    Save applicant income/employment profile.
+
+    This table is shared by:
+    - Personal Loan
+    - Business Loan
+    - Used Car Loan
+
+    application_id must always be the DATABASE loan application ID.
+    """
+
+    try:
+
+        # Confirm parent application exists
+        ensure_application_exists(application_id)
+
+
+        raw_data = payload.model_dump(
+            exclude_none=True
+        )
+
+
+        clean_data = {
+            key: value
+            for key, value in raw_data.items()
+            if key in EMPLOYMENT_COLUMNS
+        }
+
+
+        database_payload = {
+            "application_id": application_id,
+            **clean_data
+        }
+
+
+        response = (
+            supabase
+            .table("employment_profiles")
+            .upsert(
+                database_payload,
+                on_conflict="application_id"
+            )
+            .execute()
+        )
+
+
+        if not response.data:
+
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=(
+                    "Failed to save employment profile "
+                    "in Supabase"
+                )
+            )
+
+
+        return response.data[0]
+
+
+    except HTTPException:
+        raise
+
+
+    except Exception as e:
+
+        logger.exception(
+            "UPDATE EMPLOYMENT PROFILE ERROR"
+        )
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+# ============================================================
+# GET EMPLOYMENT PROFILE
+# ============================================================
+
+@router.get(
+    "/employment/{application_id}",
+    response_model=EmploymentProfileResponse
+)
+async def get_employment_profile(
+    application_id: int
+):
+    """
+    Retrieve applicant employment profile.
+    """
+
+    try:
+
+        response = (
+            supabase
+            .table("employment_profiles")
+            .select("*")
+            .eq("application_id", application_id)
+            .limit(1)
+            .execute()
+        )
+
+
+        if not response.data:
+
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Employment profile not found"
+            )
+
+
+        return response.data[0]
+
+
+    except HTTPException:
+        raise
+
+
+    except Exception as e:
+
+        logger.exception(
+            "GET EMPLOYMENT PROFILE ERROR"
+        )
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+# ============================================================
+# 3. PERSONAL LOAN PROFILE
 # ============================================================
 
 @router.put(
@@ -154,32 +656,79 @@ async def update_personal_loan_profile(
     payload: PersonalLoanProfileUpdate
 ):
     """
-    Create or update personal loan qualification details for an application.
+    Create/update Personal Loan qualification information.
     """
+
     try:
-        raw_data = payload.model_dump(exclude_none=True)
-        # Filter against valid columns to avoid PGRST204 on Swagger UI extra props
-        clean_data = {k: v for k, v in raw_data.items() if k in PERSONAL_LOAN_COLUMNS}
+
+        application = ensure_application_exists(
+            application_id
+        )
+
+
+        # Protect against writing personal-loan data
+        # into a different product application.
+        if application.get("loan_type") != "personal_loan":
+
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Application {application_id} is "
+                    f"{application.get('loan_type')}, "
+                    "not personal_loan"
+                )
+            )
+
+
+        raw_data = payload.model_dump(
+            exclude_none=True
+        )
+
+
+        clean_data = {
+            key: value
+            for key, value in raw_data.items()
+            if key in PERSONAL_LOAN_COLUMNS
+        }
+
 
         response = (
             supabase
             .table("personal_loan_profiles")
-            .upsert({"application_id": application_id, **clean_data})
+            .upsert(
+                {
+                    "application_id": application_id,
+                    **clean_data
+                },
+                on_conflict="application_id"
+            )
             .execute()
         )
 
+
         if not response.data:
+
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to update personal loan profile in Supabase"
+                detail=(
+                    "Failed to update Personal Loan profile"
+                )
             )
+
 
         return response.data[0]
 
+
     except HTTPException:
         raise
+
+
     except Exception as e:
-        logger.error(f"UPDATE PERSONAL LOAN ERROR: {repr(e)}")
+
+        logger.exception(
+            "UPDATE PERSONAL LOAN ERROR"
+        )
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
@@ -190,31 +739,43 @@ async def update_personal_loan_profile(
     "/personal-loans/{application_id}",
     response_model=PersonalLoanProfileResponse
 )
-async def get_personal_loan_profile(application_id: int):
-    """
-    Retrieve personal loan profile details for an application.
-    """
+async def get_personal_loan_profile(
+    application_id: int
+):
+
     try:
+
         response = (
             supabase
             .table("personal_loan_profiles")
             .select("*")
             .eq("application_id", application_id)
+            .limit(1)
             .execute()
         )
 
+
         if not response.data:
+
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Personal loan profile not found"
+                detail="Personal Loan profile not found"
             )
+
 
         return response.data[0]
 
+
     except HTTPException:
         raise
+
+
     except Exception as e:
-        logger.error(f"GET PERSONAL LOAN ERROR: {repr(e)}")
+
+        logger.exception(
+            "GET PERSONAL LOAN ERROR"
+        )
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
@@ -222,7 +783,7 @@ async def get_personal_loan_profile(application_id: int):
 
 
 # ============================================================
-# 3. USED CAR LOAN PROFILE ENDPOINTS
+# 4. USED CAR LOAN PROFILE
 # ============================================================
 
 @router.put(
@@ -230,35 +791,78 @@ async def get_personal_loan_profile(application_id: int):
     response_model=UsedCarLoanProfileResponse
 )
 async def update_used_car_loan_profile(
-    application_id: str,
+    application_id: int,
     payload: UsedCarLoanProfileUpdate
 ):
-    """
-    Create or update used car loan qualification details for an application.
-    """
+
     try:
-        raw_data = payload.model_dump(exclude_none=True)
-        clean_data = {k: v for k, v in raw_data.items() if k in USED_CAR_LOAN_COLUMNS}
+
+        application = ensure_application_exists(
+            application_id
+        )
+
+
+        if application.get("loan_type") != "used_car_loan":
+
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Application {application_id} is "
+                    f"{application.get('loan_type')}, "
+                    "not used_car_loan"
+                )
+            )
+
+
+        raw_data = payload.model_dump(
+            exclude_none=True
+        )
+
+
+        clean_data = {
+            key: value
+            for key, value in raw_data.items()
+            if key in USED_CAR_LOAN_COLUMNS
+        }
+
 
         response = (
             supabase
             .table("used_car_loan_profiles")
-            .upsert({"application_id": application_id, **clean_data})
+            .upsert(
+                {
+                    "application_id": application_id,
+                    **clean_data
+                },
+                on_conflict="application_id"
+            )
             .execute()
         )
 
+
         if not response.data:
+
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to update used car loan profile in Supabase"
+                detail=(
+                    "Failed to update Used Car Loan profile"
+                )
             )
+
 
         return response.data[0]
 
+
     except HTTPException:
         raise
+
+
     except Exception as e:
-        logger.error(f"UPDATE USED CAR LOAN ERROR: {repr(e)}")
+
+        logger.exception(
+            "UPDATE USED CAR LOAN ERROR"
+        )
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
@@ -269,31 +873,43 @@ async def update_used_car_loan_profile(
     "/used-car-loans/{application_id}",
     response_model=UsedCarLoanProfileResponse
 )
-async def get_used_car_loan_profile(application_id: str):
-    """
-    Retrieve used car loan profile details for an application.
-    """
+async def get_used_car_loan_profile(
+    application_id: int
+):
+
     try:
+
         response = (
             supabase
             .table("used_car_loan_profiles")
             .select("*")
             .eq("application_id", application_id)
+            .limit(1)
             .execute()
         )
 
+
         if not response.data:
+
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Used car loan profile not found"
+                detail="Used Car Loan profile not found"
             )
+
 
         return response.data[0]
 
+
     except HTTPException:
         raise
+
+
     except Exception as e:
-        logger.error(f"GET USED CAR LOAN ERROR: {repr(e)}")
+
+        logger.exception(
+            "GET USED CAR LOAN ERROR"
+        )
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
@@ -301,7 +917,7 @@ async def get_used_car_loan_profile(application_id: str):
 
 
 # ============================================================
-# 4. BUSINESS LOAN PROFILE ENDPOINTS
+# 5. BUSINESS LOAN PROFILE
 # ============================================================
 
 @router.put(
@@ -309,35 +925,78 @@ async def get_used_car_loan_profile(application_id: str):
     response_model=BusinessLoanProfileResponse
 )
 async def update_business_loan_profile(
-    application_id: str,
+    application_id: int,
     payload: BusinessLoanProfileUpdate
 ):
-    """
-    Create or update business loan qualification details for an application.
-    """
+
     try:
-        raw_data = payload.model_dump(exclude_none=True)
-        clean_data = {k: v for k, v in raw_data.items() if k in BUSINESS_LOAN_COLUMNS}
+
+        application = ensure_application_exists(
+            application_id
+        )
+
+
+        if application.get("loan_type") != "business_loan":
+
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Application {application_id} is "
+                    f"{application.get('loan_type')}, "
+                    "not business_loan"
+                )
+            )
+
+
+        raw_data = payload.model_dump(
+            exclude_none=True
+        )
+
+
+        clean_data = {
+            key: value
+            for key, value in raw_data.items()
+            if key in BUSINESS_LOAN_COLUMNS
+        }
+
 
         response = (
             supabase
             .table("business_loan_profiles")
-            .upsert({"application_id": application_id, **clean_data})
+            .upsert(
+                {
+                    "application_id": application_id,
+                    **clean_data
+                },
+                on_conflict="application_id"
+            )
             .execute()
         )
 
+
         if not response.data:
+
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to update business loan profile in Supabase"
+                detail=(
+                    "Failed to update Business Loan profile"
+                )
             )
+
 
         return response.data[0]
 
+
     except HTTPException:
         raise
+
+
     except Exception as e:
-        logger.error(f"UPDATE BUSINESS LOAN ERROR: {repr(e)}")
+
+        logger.exception(
+            "UPDATE BUSINESS LOAN ERROR"
+        )
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
@@ -348,31 +1007,43 @@ async def update_business_loan_profile(
     "/business-loans/{application_id}",
     response_model=BusinessLoanProfileResponse
 )
-async def get_business_loan_profile(application_id: str):
-    """
-    Retrieve business loan profile details for an application.
-    """
+async def get_business_loan_profile(
+    application_id: int
+):
+
     try:
+
         response = (
             supabase
             .table("business_loan_profiles")
             .select("*")
             .eq("application_id", application_id)
+            .limit(1)
             .execute()
         )
 
+
         if not response.data:
+
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Business loan profile not found"
+                detail="Business Loan profile not found"
             )
+
 
         return response.data[0]
 
+
     except HTTPException:
         raise
+
+
     except Exception as e:
-        logger.error(f"GET BUSINESS LOAN ERROR: {repr(e)}")
+
+        logger.exception(
+            "GET BUSINESS LOAN ERROR"
+        )
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
@@ -380,7 +1051,7 @@ async def get_business_loan_profile(application_id: str):
 
 
 # ============================================================
-# 5. CALLBACK ENDPOINTS
+# 6. CALLBACK ENDPOINT
 # ============================================================
 
 @router.post(
@@ -388,55 +1059,145 @@ async def get_business_loan_profile(application_id: str):
     response_model=CallbackResponse,
     status_code=status.HTTP_201_CREATED
 )
-async def create_callback(payload: CallbackCreate):
-    """
-    Schedule a customer callback request.
-    """
+async def create_callback(
+    payload: CallbackCreate
+):
+
     try:
-        data = payload.model_dump(exclude_none=True)
-        callback_id = str(uuid.uuid4())
+
+        data = payload.model_dump(
+            exclude_none=True
+        )
+
+
+        if data.get("application_id") is not None:
+
+            ensure_application_exists(
+                data["application_id"]
+            )
+
+
+        callback_id = str(
+            uuid.uuid4()
+        )
+
 
         insert_payload = {
             "id": callback_id,
-            "application_id": data.get("application_id"),
-            "lead_id": data.get("lead_id"),
-            "customer_name": data.get("customer_name"),
-            "phone_number": data["phone_number"],
-            "callback_date": data.get("callback_date"),
-            "callback_time": data.get("callback_time"),
-            "callback_datetime": data.get("callback_datetime"),
-            "reason": data.get("reason"),
-            "notes": data.get("notes"),
-            "status": data.get("status", "PENDING"),
-            "attempt_count": 0
+
+            "application_id":
+                data.get("application_id"),
+
+            "lead_id":
+                data.get("lead_id"),
+
+            "customer_name":
+                data.get("customer_name"),
+
+            "phone_number":
+                data["phone_number"],
+
+            "callback_date":
+                data.get("callback_date"),
+
+            "callback_time":
+                data.get("callback_time"),
+
+            "callback_datetime":
+                data.get("callback_datetime"),
+
+            "reason":
+                data.get("reason"),
+
+            "notes":
+                data.get("notes"),
+
+            "status":
+                data.get(
+                    "status",
+                    "PENDING"
+                ),
+
+            "attempt_count": 0,
         }
-        insert_payload = {k: v for k, v in insert_payload.items() if v is not None}
+
+
+        insert_payload = {
+            key: value
+            for key, value in insert_payload.items()
+            if value is not None
+        }
+
 
         try:
-            response = supabase.table("callbacks").insert(insert_payload).execute()
+
+            response = (
+                supabase
+                .table("callbacks")
+                .insert(insert_payload)
+                .execute()
+            )
+
+
             if response.data:
                 return response.data[0]
-        except Exception as db_err:
-            logger.warning(f"Failed to write to callbacks table: {db_err}")
 
-        # Graceful return with assigned callback ID if DB table not yet migrated
+
+        except Exception as db_err:
+
+            logger.warning(
+                f"Callback database insert failed: "
+                f"{db_err}"
+            )
+
+
+        # Fallback response
         return CallbackResponse(
             id=callback_id,
-            application_id=data.get("application_id"),
-            lead_id=data.get("lead_id"),
-            customer_name=data.get("customer_name"),
-            phone_number=data["phone_number"],
-            callback_date=data.get("callback_date"),
-            callback_time=data.get("callback_time"),
-            callback_datetime=data.get("callback_datetime"),
-            reason=data.get("reason"),
-            notes=data.get("notes"),
+
+            application_id=
+                data.get("application_id"),
+
+            lead_id=
+                data.get("lead_id"),
+
+            customer_name=
+                data.get("customer_name"),
+
+            phone_number=
+                data["phone_number"],
+
+            callback_date=
+                data.get("callback_date"),
+
+            callback_time=
+                data.get("callback_time"),
+
+            callback_datetime=
+                data.get("callback_datetime"),
+
+            reason=
+                data.get("reason"),
+
+            notes=
+                data.get("notes"),
+
             status="PENDING",
+
             attempt_count=0
         )
 
+
+    except HTTPException:
+        raise
+
+
     except Exception as e:
-        logger.error(f"CREATE CALLBACK ERROR: {repr(e)}")
+
+        logger.exception(
+            "CREATE CALLBACK ERROR"
+        )
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
@@ -444,7 +1205,7 @@ async def create_callback(payload: CallbackCreate):
 
 
 # ============================================================
-# 6. CALCULATOR ENDPOINTS (EMI & FOIR)
+# 7. EMI CALCULATOR
 # ============================================================
 
 @router.post(
@@ -452,66 +1213,195 @@ async def create_callback(payload: CallbackCreate):
     response_model=EMICalculatorResponse,
     status_code=status.HTTP_200_OK
 )
-async def calculate_emi(payload: EMICalculatorRequest):
-    """
-    Calculate Equated Monthly Installment (EMI), total interest, and total payment.
-    Formula: EMI = P * r * (1 + r)^n / ((1 + r)^n - 1)
-    """
-    P = payload.principal
-    n = payload.tenure_months
+async def calculate_emi(
+    payload: EMICalculatorRequest
+):
+
+    principal = payload.principal
+
+    tenure_months = payload.tenure_months
+
     annual_rate = payload.annual_rate
 
-    # Monthly interest rate
-    r = (annual_rate / 100.0) / 12.0
 
-    if r == 0:
-        monthly_emi = P / n
+    monthly_rate = (
+        annual_rate / 100.0
+    ) / 12.0
+
+
+    if monthly_rate == 0:
+
+        monthly_emi = (
+            principal /
+            tenure_months
+        )
+
+
     else:
-        compound = (1.0 + r) ** n
-        monthly_emi = P * r * compound / (compound - 1.0)
 
-    total_payment = monthly_emi * n
-    total_interest = total_payment - P
+        compound = (
+            1.0 + monthly_rate
+        ) ** tenure_months
 
-    return EMICalculatorResponse(
-        principal=round(P, 2),
-        annual_rate=round(annual_rate, 2),
-        tenure_months=n,
-        monthly_emi=round(monthly_emi, 2),
-        total_interest=round(max(0.0, total_interest), 2),
-        total_payment=round(total_payment, 2)
+
+        monthly_emi = (
+            principal
+            * monthly_rate
+            * compound
+            / (
+                compound - 1.0
+            )
+        )
+
+
+    total_payment = (
+        monthly_emi *
+        tenure_months
     )
 
+
+    total_interest = (
+        total_payment -
+        principal
+    )
+
+
+    return EMICalculatorResponse(
+
+        principal=round(
+            principal,
+            2
+        ),
+
+        annual_rate=round(
+            annual_rate,
+            2
+        ),
+
+        tenure_months=
+            tenure_months,
+
+        monthly_emi=round(
+            monthly_emi,
+            2
+        ),
+
+        total_interest=round(
+            max(
+                0.0,
+                total_interest
+            ),
+            2
+        ),
+
+        total_payment=round(
+            total_payment,
+            2
+        )
+    )
+
+
+# ============================================================
+# 8. FOIR CALCULATOR
+# ============================================================
 
 @router.post(
     "/calculators/foir",
     response_model=FOIRCalculatorResponse,
     status_code=status.HTTP_200_OK
 )
-async def calculate_foir(payload: FOIRCalculatorRequest):
-    """
-    Calculate Fixed Obligation to Income Ratio (FOIR) and maximum affordable EMI.
-    FOIR = (Existing EMIs + Proposed EMI) / Net Monthly Income * 100
-    """
-    income = payload.net_monthly_income
-    existing = payload.existing_monthly_obligations
-    proposed = payload.proposed_emi
-    threshold = payload.foir_threshold_percentage
+async def calculate_foir(
+    payload: FOIRCalculatorRequest
+):
 
-    total_obligations = existing + proposed
-    foir_percentage = (total_obligations / income) * 100.0
+    income = (
+        payload.net_monthly_income
+    )
 
-    max_permissible_obligation = income * (threshold / 100.0)
-    max_affordable_new_emi = max(0.0, max_permissible_obligation - existing)
-    is_eligible = foir_percentage <= threshold
+    existing = (
+        payload.existing_monthly_obligations
+    )
+
+    proposed = (
+        payload.proposed_emi
+    )
+
+    threshold = (
+        payload.foir_threshold_percentage
+    )
+
+
+    total_obligations = (
+        existing +
+        proposed
+    )
+
+
+    foir_percentage = (
+        total_obligations /
+        income
+    ) * 100.0
+
+
+    max_permissible_obligation = (
+        income *
+        (
+            threshold /
+            100.0
+        )
+    )
+
+
+    max_affordable_new_emi = max(
+        0.0,
+        max_permissible_obligation
+        - existing
+    )
+
+
+    is_eligible = (
+        foir_percentage
+        <= threshold
+    )
+
 
     return FOIRCalculatorResponse(
-        net_monthly_income=round(income, 2),
-        existing_monthly_obligations=round(existing, 2),
-        proposed_emi=round(proposed, 2),
-        total_obligations=round(total_obligations, 2),
-        foir_percentage=round(foir_percentage, 2),
-        max_permissible_obligation=round(max_permissible_obligation, 2),
-        max_affordable_new_emi=round(max_affordable_new_emi, 2),
-        is_eligible=is_eligible
+
+        net_monthly_income=round(
+            income,
+            2
+        ),
+
+        existing_monthly_obligations=round(
+            existing,
+            2
+        ),
+
+        proposed_emi=round(
+            proposed,
+            2
+        ),
+
+        total_obligations=round(
+            total_obligations,
+            2
+        ),
+
+        foir_percentage=round(
+            foir_percentage,
+            2
+        ),
+
+        max_permissible_obligation=round(
+            max_permissible_obligation,
+            2
+        ),
+
+        max_affordable_new_emi=round(
+            max_affordable_new_emi,
+            2
+        ),
+
+        is_eligible=
+            is_eligible
     )

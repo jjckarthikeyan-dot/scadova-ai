@@ -661,12 +661,140 @@ def build_tool_definition(tool_name: str, business_key: str, business_name: str,
             'execution_mode': 'blocking',
         }
 
+    elif tool_name == 'update_employment':
+        body = json.dumps({
+            'employment_type': '{{employment_type}}',
+            'company_name': '{{company_name}}',
+            'designation': '{{designation}}',
+            'gross_monthly_salary': '{{gross_monthly_salary}}',
+            'salary_bank_name': '{{salary_bank_name}}',
+            'business_name': '{{business_name}}',
+            'monthly_business_income': '{{monthly_business_income}}'
+        }, indent=2)
+        return {
+            'name': 'update_employment',
+            'description': f'Record employment and income details (salaried or self-employed) for an active loan application for {b_name}.',
+            'tool_type': 'webhook',
+            'method': 'PUT',
+            'url': f'{base}/api/loan-agency/employment/{{{{application_id}}}}',
+            'arguments': [
+                {'name': 'application_id', 'description': 'The integer database ID of the loan application returned by create_loan_application'},
+                {'name': 'employment_type', 'description': 'Type of employment: salaried or self_employed'},
+                {'name': 'company_name', 'description': 'Name of employer/company (if salaried)'},
+                {'name': 'designation', 'description': 'Job title or designation (if salaried)'},
+                {'name': 'gross_monthly_salary', 'description': 'Gross monthly salary in rupees (if salaried)'},
+                {'name': 'salary_bank_name', 'description': 'Salary account bank name (if salaried)'},
+                {'name': 'business_name', 'description': 'Registered enterprise or business name (if self-employed)'},
+                {'name': 'monthly_business_income', 'description': 'Average monthly business profit or income (if self-employed)'}
+            ],
+            'content_type': 'application/json',
+            'body_template': body,
+            'headers': [],
+            'timeout_seconds': 30,
+            'error_handling': 'passthrough',
+            'expects_response': True,
+            'execution_mode': 'blocking',
+        }
+
+    elif tool_name == 'update_personal_loan':
+        body = json.dumps({
+            'employment_type': '{{employment_type}}',
+            'company_name': '{{company_name}}',
+            'designation': '{{designation}}',
+            'gross_monthly_salary': '{{gross_monthly_salary}}',
+            'net_monthly_salary': '{{net_monthly_salary}}',
+            'requested_amount': '{{requested_amount}}',
+            'preferred_tenure_months': '{{preferred_tenure_months}}'
+        }, indent=2)
+        return {
+            'name': 'update_personal_loan',
+            'description': f'Update personal loan qualification profile for {b_name}.',
+            'tool_type': 'webhook',
+            'method': 'PUT',
+            'url': f'{base}/api/loan-agency/personal-loans/{{{{application_id}}}}',
+            'arguments': [
+                {'name': 'application_id', 'description': 'Integer application ID returned by create_loan_application'},
+                {'name': 'employment_type', 'description': 'Employment type (salaried or self_employed)'},
+                {'name': 'company_name', 'description': 'Employer company name'},
+                {'name': 'designation', 'description': 'Job title'},
+                {'name': 'gross_monthly_salary', 'description': 'Gross monthly salary in INR'},
+                {'name': 'net_monthly_salary', 'description': 'Net take-home monthly salary in INR'},
+                {'name': 'requested_amount', 'description': 'Requested loan amount in INR'},
+                {'name': 'preferred_tenure_months', 'description': 'Tenure in months'}
+            ],
+            'content_type': 'application/json',
+            'body_template': body,
+            'headers': [],
+            'timeout_seconds': 30,
+            'error_handling': 'passthrough',
+            'expects_response': True,
+            'execution_mode': 'blocking',
+        }
+
+    elif tool_name == 'update_business_loan':
+        body = json.dumps({
+            'business_name': '{{business_name}}',
+            'business_type': '{{business_type}}',
+            'turnover_year_1': '{{turnover_year_1}}',
+            'requested_amount': '{{requested_amount}}'
+        }, indent=2)
+        return {
+            'name': 'update_business_loan',
+            'description': f'Update business loan qualification profile for {b_name}.',
+            'tool_type': 'webhook',
+            'method': 'PUT',
+            'url': f'{base}/api/loan-agency/business-loans/{{{{application_id}}}}',
+            'arguments': [
+                {'name': 'application_id', 'description': 'Integer application ID returned by create_loan_application'},
+                {'name': 'business_name', 'description': 'Registered enterprise or business name'},
+                {'name': 'business_type', 'description': 'Type of business entity (Proprietorship, Partnership, Pvt Ltd)'},
+                {'name': 'turnover_year_1', 'description': 'Annual turnover in INR'},
+                {'name': 'requested_amount', 'description': 'Requested loan amount in INR'}
+            ],
+            'content_type': 'application/json',
+            'body_template': body,
+            'headers': [],
+            'timeout_seconds': 30,
+            'error_handling': 'passthrough',
+            'expects_response': True,
+            'execution_mode': 'blocking',
+        }
+
+    elif tool_name == 'update_used_car_loan':
+        body = json.dumps({
+            'car_make': '{{car_make}}',
+            'car_model': '{{car_model}}',
+            'manufacturing_year': '{{manufacturing_year}}',
+            'required_loan_amount': '{{required_loan_amount}}'
+        }, indent=2)
+        return {
+            'name': 'update_used_car_loan',
+            'description': f'Update used car loan qualification profile for {b_name}.',
+            'tool_type': 'webhook',
+            'method': 'PUT',
+            'url': f'{base}/api/loan-agency/used-car-loans/{{{{application_id}}}}',
+            'arguments': [
+                {'name': 'application_id', 'description': 'Integer application ID returned by create_loan_application'},
+                {'name': 'car_make', 'description': 'Vehicle manufacturer make, e.g. Maruti, Hyundai, Honda'},
+                {'name': 'car_model', 'description': 'Vehicle model, e.g. Swift, City, Creta'},
+                {'name': 'manufacturing_year', 'description': 'Year of manufacture'},
+                {'name': 'required_loan_amount', 'description': 'Desired vehicle loan amount in INR'}
+            ],
+            'content_type': 'application/json',
+            'body_template': body,
+            'headers': [],
+            'timeout_seconds': 30,
+            'error_handling': 'passthrough',
+            'expects_response': True,
+            'execution_mode': 'blocking',
+        }
+
     elif tool_name == 'create_callback':
         body = json.dumps({
-            'business_id': b_key,
+            'application_id': '{{application_id}}',
             'customer_name': '{{customer_name}}',
             'phone_number': '{{phone_number}}',
-            'preferred_time': '{{preferred_time}}',
+            'callback_datetime': '{{preferred_time}}',
             'notes': '{{notes}}'
         }, indent=2)
         return {
@@ -676,9 +804,10 @@ def build_tool_definition(tool_name: str, business_key: str, business_name: str,
             'method': 'POST',
             'url': f'{base}/api/loan-agency/callbacks',
             'arguments': [
+                {'name': 'application_id', 'description': 'Optional integer application ID'},
                 {'name': 'customer_name', 'description': 'Customer name'},
                 {'name': 'phone_number', 'description': 'Phone number for callback'},
-                {'name': 'preferred_time', 'description': 'Preferred callback time'},
+                {'name': 'preferred_time', 'description': 'Preferred callback date and time'},
                 {'name': 'notes', 'description': 'Reason for callback'}
             ],
             'content_type': 'application/json',
