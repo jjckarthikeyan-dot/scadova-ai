@@ -255,19 +255,48 @@ class EmploymentProfileUpdate(BaseModel):
         return self
 
 
-class EmploymentProfileWithApplicationId(EmploymentProfileUpdate):
+class EmploymentProfileWithApplicationId(BaseModel):
     """
     Employment profile schema specifically designed for Sarvam AI voice tools/webhooks,
     where application_id is provided directly in the request body.
+    Converts blank strings to None before validation so both salaried and self-employed
+    fields can be submitted flexibly via a single webhook tool.
     """
+    model_config = ConfigDict(extra="ignore")
+
     application_id: int
-    employment_type: Optional[Union[EmploymentType, str]] = None
+    employment_type: str
+
+    company_name: Optional[str] = None
+    designation: Optional[str] = None
+    industry_type: Optional[str] = None
+    total_experience_years: Optional[float] = None
+    company_joining_date: Optional[str] = None
+    gross_monthly_salary: Optional[float] = None
+    net_monthly_salary: Optional[float] = None
+    annual_income: Optional[float] = None
+    salary_bank_name: Optional[str] = None
+
+    business_name: Optional[str] = None
+    business_nature: Optional[str] = None
+    business_start_year: Optional[int] = None
+    business_vintage_years: Optional[float] = None
+    monthly_business_income: Optional[float] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def empty_strings_to_none(cls, data):
+        if isinstance(data, dict):
+            return {
+                key: None if (value == "" or (isinstance(value, str) and value.strip() == "")) else value
+                for key, value in data.items()
+            }
+        return data
 
     @model_validator(mode="after")
-    def validate_employment_details(self):
-        if self.employment_type == EmploymentType.SALARIED or str(self.employment_type).lower() in ("salaried", "employmenttype.salaried"):
-            if self.net_monthly_salary is None and self.gross_monthly_salary is not None:
-                self.net_monthly_salary = self.gross_monthly_salary
+    def sync_salaries(self):
+        if self.net_monthly_salary is None and self.gross_monthly_salary is not None:
+            self.net_monthly_salary = self.gross_monthly_salary
         return self
 
 

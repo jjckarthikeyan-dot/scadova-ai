@@ -95,3 +95,26 @@ def test_save_employment_profile_from_body_endpoint(mock_supabase):
     assert response_root.status_code == 200
     data_root = response_root.json()
     assert data_root["application_id"] == 42
+
+
+def test_employment_schema_converts_empty_strings_to_none():
+    # When voice telephony webhook passes empty strings for irrelevant fields,
+    # they must be converted to None and not fail float/int parsing
+    payload = EmploymentProfileWithApplicationId(
+        application_id=42,
+        employment_type="self_employed",
+        business_name="Acme Corp",
+        monthly_business_income=50000,
+        company_name="",
+        gross_monthly_salary="",
+        net_monthly_salary="",
+        business_start_year="",
+        business_vintage_years=""
+    )
+    dumped = payload.model_dump()
+    assert dumped["application_id"] == 42
+    assert dumped["business_name"] == "Acme Corp"
+    assert dumped["company_name"] is None
+    assert dumped["gross_monthly_salary"] is None
+    assert dumped["business_start_year"] is None
+    assert dumped["business_vintage_years"] is None
