@@ -5,11 +5,19 @@ from backend.core.supabase import supabase
 from .sarvam_client import sarvam_client
 from .schemas import (
     EmploymentProfileWithApplicationId,
+    PersonalLoanProfileWithApplicationId,
+    UsedCarLoanProfileWithApplicationId,
+    BusinessLoanProfileWithApplicationId,
     SarvamDeploymentRequest,
     SarvamOutboundCallRequest,
     SarvamWebhookPayload
 )
-from .router import save_employment_profile_from_body
+from .router import (
+    save_employment_profile_from_body,
+    save_personal_loan_profile_from_body,
+    save_used_car_loan_profile_from_body,
+    save_business_loan_profile_from_body
+)
 
 logger = logging.getLogger("sarvam_router")
 
@@ -26,6 +34,33 @@ async def sarvam_employment_endpoint(payload: EmploymentProfileWithApplicationId
     Direct handler for Sarvam AI telephony tool calling /api/sarvam/employment.
     """
     return await save_employment_profile_from_body(payload)
+
+
+@router.put("/personal-loans")
+@router.post("/personal-loans")
+async def sarvam_personal_loans_endpoint(payload: PersonalLoanProfileWithApplicationId):
+    """
+    Direct handler for Sarvam AI telephony tool calling /api/sarvam/personal-loans.
+    """
+    return await save_personal_loan_profile_from_body(payload)
+
+
+@router.put("/used-car-loans")
+@router.post("/used-car-loans")
+async def sarvam_used_car_loans_endpoint(payload: UsedCarLoanProfileWithApplicationId):
+    """
+    Direct handler for Sarvam AI telephony tool calling /api/sarvam/used-car-loans.
+    """
+    return await save_used_car_loan_profile_from_body(payload)
+
+
+@router.put("/business-loans")
+@router.post("/business-loans")
+async def sarvam_business_loans_endpoint(payload: BusinessLoanProfileWithApplicationId):
+    """
+    Direct handler for Sarvam AI telephony tool calling /api/sarvam/business-loans.
+    """
+    return await save_business_loan_profile_from_body(payload)
 
 
 @router.post("/deployments/inbound", status_code=status.HTTP_200_OK)

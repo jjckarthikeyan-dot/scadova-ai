@@ -18,8 +18,18 @@ from backend.loan_agency.sarvam_router import router as sarvam_router
 from backend.appointment_booking.router import router as appointment_booking_router
 from backend.admin.routes import router as admin_router
 
-from backend.loan_agency.schemas import EmploymentProfileWithApplicationId
-from backend.loan_agency.router import save_employment_profile_from_body
+from backend.loan_agency.schemas import (
+    EmploymentProfileWithApplicationId,
+    PersonalLoanProfileWithApplicationId,
+    UsedCarLoanProfileWithApplicationId,
+    BusinessLoanProfileWithApplicationId
+)
+from backend.loan_agency.router import (
+    save_employment_profile_from_body,
+    save_personal_loan_profile_from_body,
+    save_used_car_loan_profile_from_body,
+    save_business_loan_profile_from_body
+)
 
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
@@ -56,13 +66,34 @@ app.include_router(
 app.include_router(loan_agency_router)
 app.include_router(sarvam_router)
 
-# Direct aliases for Sarvam AI webhooks or root employment profile saves
+# Direct aliases for Sarvam AI webhooks or root loan profile saves
 @app.put("/employment", tags=["Loan Agency"])
 @app.post("/employment", tags=["Loan Agency"])
 @app.put("/api/loan/employment", tags=["Loan Agency"])
 @app.post("/api/loan/employment", tags=["Loan Agency"])
 async def root_employment_alias(payload: EmploymentProfileWithApplicationId):
     return await save_employment_profile_from_body(payload)
+
+@app.put("/personal-loans", tags=["Loan Agency"])
+@app.post("/personal-loans", tags=["Loan Agency"])
+@app.put("/api/loan/personal-loans", tags=["Loan Agency"])
+@app.post("/api/loan/personal-loans", tags=["Loan Agency"])
+async def root_personal_loans_alias(payload: PersonalLoanProfileWithApplicationId):
+    return await save_personal_loan_profile_from_body(payload)
+
+@app.put("/used-car-loans", tags=["Loan Agency"])
+@app.post("/used-car-loans", tags=["Loan Agency"])
+@app.put("/api/loan/used-car-loans", tags=["Loan Agency"])
+@app.post("/api/loan/used-car-loans", tags=["Loan Agency"])
+async def root_used_car_loans_alias(payload: UsedCarLoanProfileWithApplicationId):
+    return await save_used_car_loan_profile_from_body(payload)
+
+@app.put("/business-loans", tags=["Loan Agency"])
+@app.post("/business-loans", tags=["Loan Agency"])
+@app.put("/api/loan/business-loans", tags=["Loan Agency"])
+@app.post("/api/loan/business-loans", tags=["Loan Agency"])
+async def root_business_loans_alias(payload: BusinessLoanProfileWithApplicationId):
+    return await save_business_loan_profile_from_body(payload)
 
 # Service & Appointment Booking router
 app.include_router(appointment_booking_router)

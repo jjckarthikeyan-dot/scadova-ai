@@ -255,15 +255,39 @@ class EmploymentProfileUpdate(BaseModel):
         return self
 
 
-class EmploymentProfileWithApplicationId(BaseModel):
+class SarvamCleanBaseModel(BaseModel):
+    """
+    Reusable base model for voice telephony agents (Sarvam AI / Fish Audio / Retell)
+    that normalizes empty and whitespace-only strings to None before validation,
+    preventing 422 Unprocessable Entity errors on optional numeric, boolean, or date fields.
+    Preserves legitimate 0, 0.0, and False values.
+    """
+    model_config = ConfigDict(extra="ignore")
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_empty_values(cls, data):
+        if isinstance(data, dict):
+            cleaned = {}
+
+            for key, value in data.items():
+                if isinstance(value, str) and value.strip() == "":
+                    cleaned[key] = None
+                else:
+                    cleaned[key] = value
+
+            return cleaned
+
+        return data
+
+
+class EmploymentProfileWithApplicationId(SarvamCleanBaseModel):
     """
     Employment profile schema specifically designed for Sarvam AI voice tools/webhooks,
     where application_id is provided directly in the request body.
     Converts blank strings to None before validation so both salaried and self-employed
     fields can be submitted flexibly via a single webhook tool.
     """
-    model_config = ConfigDict(extra="ignore")
-
     application_id: int
     employment_type: str
 
@@ -282,22 +306,6 @@ class EmploymentProfileWithApplicationId(BaseModel):
     business_start_year: Optional[int] = None
     business_vintage_years: Optional[float] = None
     monthly_business_income: Optional[float] = None
-
-    @model_validator(mode="before")
-    @classmethod
-    def empty_strings_to_none(cls, data):
-        if isinstance(data, dict):
-            cleaned = {}
-
-            for key, value in data.items():
-                if isinstance(value, str) and value.strip() == "":
-                    cleaned[key] = None
-                else:
-                    cleaned[key] = value
-
-            return cleaned
-
-        return data
 
     @model_validator(mode="after")
     def sync_salaries(self):
@@ -323,9 +331,7 @@ class EmploymentProfileResponse(EmploymentProfileUpdate):
 # PERSONAL LOAN PROFILE SCHEMAS
 # ============================================================
 
-class PersonalLoanProfileUpdate(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
+class PersonalLoanProfileUpdate(SarvamCleanBaseModel):
     # --------------------------------------------------------
     # Existing employment fields
     #
@@ -481,13 +487,19 @@ class PersonalLoanProfileResponse(PersonalLoanProfileUpdate):
     updated_at: Optional[str] = None
 
 
+class PersonalLoanProfileWithApplicationId(PersonalLoanProfileUpdate):
+    """
+    Personal Loan profile schema for Sarvam AI telephony tools/webhooks,
+    where application_id is provided directly in the request body.
+    """
+    application_id: int
+
+
 # ============================================================
 # USED CAR LOAN PROFILE SCHEMAS
 # ============================================================
 
-class UsedCarLoanProfileUpdate(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
+class UsedCarLoanProfileUpdate(SarvamCleanBaseModel):
     # --------------------------------------------------------
     # TEMPORARY BACKWARD-COMPATIBLE EMPLOYMENT FIELDS
     #
@@ -622,13 +634,19 @@ class UsedCarLoanProfileResponse(UsedCarLoanProfileUpdate):
     updated_at: Optional[str] = None
 
 
+class UsedCarLoanProfileWithApplicationId(UsedCarLoanProfileUpdate):
+    """
+    Used Car Loan profile schema for Sarvam AI telephony tools/webhooks,
+    where application_id is provided directly in the request body.
+    """
+    application_id: int
+
+
 # ============================================================
 # BUSINESS LOAN PROFILE SCHEMAS
 # ============================================================
 
-class BusinessLoanProfileUpdate(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
+class BusinessLoanProfileUpdate(SarvamCleanBaseModel):
     # --------------------------------------------------------
     # BUSINESS DETAILS
     # --------------------------------------------------------
@@ -743,6 +761,14 @@ class BusinessLoanProfileResponse(BusinessLoanProfileUpdate):
 
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
+
+
+class BusinessLoanProfileWithApplicationId(BusinessLoanProfileUpdate):
+    """
+    Business Loan profile schema for Sarvam AI telephony tools/webhooks,
+    where application_id is provided directly in the request body.
+    """
+    application_id: int
 
 
 # ============================================================

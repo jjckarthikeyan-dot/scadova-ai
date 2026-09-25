@@ -2,7 +2,14 @@ import pytest
 from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
 from backend.main import app
-from backend.loan_agency.schemas import EmploymentProfileWithApplicationId, EmploymentType
+from backend.loan_agency.schemas import (
+    EmploymentProfileWithApplicationId,
+    PersonalLoanProfileWithApplicationId,
+    BusinessLoanProfileWithApplicationId,
+    UsedCarLoanProfileWithApplicationId,
+    SarvamCleanBaseModel,
+    EmploymentType
+)
 
 client = TestClient(app)
 
@@ -98,7 +105,7 @@ def test_save_employment_profile_from_body_endpoint(mock_supabase):
 
 
 def test_employment_schema_converts_empty_strings_to_none():
-    # When voice telephony webhook passes empty strings for irrelevant fields,
+    # When voice telephony webhook passes empty or whitespace strings for irrelevant fields,
     # they must be converted to None and not fail float/int parsing
     payload = EmploymentProfileWithApplicationId(
         application_id=42,
@@ -106,15 +113,93 @@ def test_employment_schema_converts_empty_strings_to_none():
         business_name="Acme Corp",
         monthly_business_income=50000,
         company_name="",
-        gross_monthly_salary="",
+        gross_monthly_salary="   ",
         net_monthly_salary="",
         business_start_year="",
-        business_vintage_years=""
+        business_vintage_years="  "
     )
-    dumped = payload.model_dump()
+    dumped = payload.model_dump(exclude_none=True)
     assert dumped["application_id"] == 42
     assert dumped["business_name"] == "Acme Corp"
-    assert dumped["company_name"] is None
-    assert dumped["gross_monthly_salary"] is None
-    assert dumped["business_start_year"] is None
-    assert dumped["business_vintage_years"] is None
+    assert "company_name" not in dumped
+    assert "gross_monthly_salary" not in dumped
+    assert "business_start_year" not in dumped
+
+
+def test_sarvam_clean_base_model_preserves_zero_and_false():
+    class DummyModel(SarvamCleanBaseModel):
+        credit_card_outstanding: float | None = None
+        existing_personal_loan_emi: float | None = None
+        has_settlement: bool | None = None
+        city: str | None = None
+        empty_field: str | None = None
+        whitespace_field: str | None = None
+
+    instance = DummyModel(
+        credit_card_outstanding=0,
+        existing_personal_loan_emi=0.0,
+        has_settlement=False,
+        city="Hyderabad",
+        empty_field="",
+        whitespace_field="   "
+    )
+    dumped = instance.model_dump()
+    assert dumped["credit_card_outstanding"] == 0.0
+    assert dumped["existing_personal_loan_emi"] == 0.0
+    assert dumped["has_settlement"] is False
+    assert dumped["city"] == "Hyderabad"
+    assert dumped["empty_field"] is None
+    assert dumped["whitespace_field"] is None
+
+    # When exclude_none=True, only None values are omitted; 0 and False remain
+    clean_dump = instance.model_dump(exclude_none=True)
+    assert clean_dump["credit_card_outstanding"] == 0.0
+    assert clean_dump["has_settlement"] is False
+    assert clean_dump["city"] == "Hyderabad"
+    assert "empty_field" not in clean_dump
+    assert "whitespace_field" not in clean_dump
+
+
+def test_personal_loan_with_application_id_normalization():
+    payload = PersonalLoanProfileWithApplicationId(
+        application_id=101,
+        credit_card_outstanding=0,
+        existing_personal_loan_emi="",
+        has_settlement=False,
+        has_overdue_payments="  ",
+        requested_amount=500000
+    )
+    assert payload.application_id == 101
+    assert payload.credit_card_outstanding == 0.0
+    assert payload.existing_personal_loan_emi is None
+    assert payload.has_settlement is False
+    assert payload.has_overdue_payments is None
+    assert payload.requested_amount == 500000.0
+
+
+def test_business_and_used_car_loan_normalization():
+    biz = BusinessLoanProfileWithApplicationId(
+        application_id=202,
+        business_start_year="",
+        profit_or_net_income="  ",
+        gst_registered=False,
+        current_outstanding=0
+    )
+    assert biz.application_id == 202
+    assert biz.business_start_year is None
+    assert biz.profit_or_net_income is None
+    assert biz.gst_registered is False
+    assert biz.current_outstanding == 0.0
+
+    car = UsedCarLoanProfileWithApplicationId(
+        application_id=303,
+        manufacturing_year="",
+        kilometers_driven=0,
+        current_market_value="   ",
+        down_payment=50000
+    )
+    assert car.application_id == 303
+    assert car.manufacturing_year is None
+    assert car.kilometers_driven == 0.0
+    assert car.current_market_value is None
+    assert car.down_payment == 50000.0

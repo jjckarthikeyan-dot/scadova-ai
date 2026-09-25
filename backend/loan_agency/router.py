@@ -16,12 +16,15 @@ from .schemas import (
     EmploymentProfileResponse,
 
     PersonalLoanProfileUpdate,
+    PersonalLoanProfileWithApplicationId,
     PersonalLoanProfileResponse,
 
     UsedCarLoanProfileUpdate,
+    UsedCarLoanProfileWithApplicationId,
     UsedCarLoanProfileResponse,
 
     BusinessLoanProfileUpdate,
+    BusinessLoanProfileWithApplicationId,
     BusinessLoanProfileResponse,
 
     CallbackCreate,
@@ -778,6 +781,45 @@ async def update_personal_loan_profile(
         )
 
 
+@router.put("/personal-loans")
+@router.post("/personal-loans")
+async def save_personal_loan_profile_from_body(
+    payload: PersonalLoanProfileWithApplicationId
+):
+    """
+    Direct endpoint for Sarvam AI voice telephony tools and webhooks,
+    where application_id is included in the request body.
+    """
+    application_id = payload.application_id
+
+    await ensure_application_exists(application_id)
+
+    data = payload.model_dump(
+        exclude={"application_id"},
+        exclude_none=True
+    )
+
+    clean_data = {
+        key: value
+        for key, value in data.items()
+        if key in PERSONAL_LOAN_COLUMNS
+    }
+    clean_data["application_id"] = application_id
+
+    result = (
+        supabase.table("personal_loan_profiles")
+        .upsert(
+            clean_data,
+            on_conflict="application_id"
+        )
+        .execute()
+    )
+
+    if result.data and len(result.data) > 0:
+        return result.data[0]
+    return clean_data
+
+
 @router.get(
     "/personal-loans/{application_id}",
     response_model=PersonalLoanProfileResponse
@@ -912,6 +954,45 @@ async def update_used_car_loan_profile(
         )
 
 
+@router.put("/used-car-loans")
+@router.post("/used-car-loans")
+async def save_used_car_loan_profile_from_body(
+    payload: UsedCarLoanProfileWithApplicationId
+):
+    """
+    Direct endpoint for Sarvam AI voice telephony tools and webhooks,
+    where application_id is included in the request body.
+    """
+    application_id = payload.application_id
+
+    await ensure_application_exists(application_id)
+
+    data = payload.model_dump(
+        exclude={"application_id"},
+        exclude_none=True
+    )
+
+    clean_data = {
+        key: value
+        for key, value in data.items()
+        if key in USED_CAR_LOAN_COLUMNS
+    }
+    clean_data["application_id"] = application_id
+
+    result = (
+        supabase.table("used_car_loan_profiles")
+        .upsert(
+            clean_data,
+            on_conflict="application_id"
+        )
+        .execute()
+    )
+
+    if result.data and len(result.data) > 0:
+        return result.data[0]
+    return clean_data
+
+
 @router.get(
     "/used-car-loans/{application_id}",
     response_model=UsedCarLoanProfileResponse
@@ -1044,6 +1125,45 @@ async def update_business_loan_profile(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
         )
+
+
+@router.put("/business-loans")
+@router.post("/business-loans")
+async def save_business_loan_profile_from_body(
+    payload: BusinessLoanProfileWithApplicationId
+):
+    """
+    Direct endpoint for Sarvam AI voice telephony tools and webhooks,
+    where application_id is included in the request body.
+    """
+    application_id = payload.application_id
+
+    await ensure_application_exists(application_id)
+
+    data = payload.model_dump(
+        exclude={"application_id"},
+        exclude_none=True
+    )
+
+    clean_data = {
+        key: value
+        for key, value in data.items()
+        if key in BUSINESS_LOAN_COLUMNS
+    }
+    clean_data["application_id"] = application_id
+
+    result = (
+        supabase.table("business_loan_profiles")
+        .upsert(
+            clean_data,
+            on_conflict="application_id"
+        )
+        .execute()
+    )
+
+    if result.data and len(result.data) > 0:
+        return result.data[0]
+    return clean_data
 
 
 @router.get(
