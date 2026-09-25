@@ -12,6 +12,7 @@ from .schemas import (
     LoanApplicationResponse,
 
     EmploymentProfileUpdate,
+    EmploymentProfileWithApplicationId,
     EmploymentProfileResponse,
 
     PersonalLoanProfileUpdate,
@@ -205,6 +206,14 @@ BUSINESS_LOAN_COLUMNS = {
 # HELPER FUNCTIONS
 # ============================================================
 
+class AwaitableDict(dict):
+    """A dictionary that can also be awaited in async functions if needed."""
+    def __await__(self):
+        async def _coro():
+            return self
+        return _coro().__await__()
+
+
 def ensure_application_exists(application_id: int) -> Dict[str, Any]:
     """
     Confirm that a database loan application exists before writing
@@ -226,7 +235,7 @@ def ensure_application_exists(application_id: int) -> Dict[str, Any]:
             detail=f"Loan application {application_id} not found"
         )
 
-    return response.data[0]
+    return AwaitableDict(response.data[0])
 
 
 # ============================================================
@@ -587,6 +596,40 @@ async def update_employment_profile(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
         )
+
+
+@router.put("/employment")
+@router.post("/employment")
+async def save_employment_profile_from_body(
+    payload: EmploymentProfileWithApplicationId
+):
+    """
+    Direct endpoint specifically for Sarvam AI voice telephony tools and webhooks,
+    where application_id is included in the request body.
+    """
+    application_id = payload.application_id
+
+    await ensure_application_exists(application_id)
+
+    data = payload.model_dump(
+        exclude={"application_id"},
+        exclude_none=True
+    )
+
+    data["application_id"] = application_id
+
+    result = (
+        supabase.table("employment_profiles")
+        .upsert(
+            data,
+            on_conflict="application_id"
+        )
+        .execute()
+    )
+
+    if result.data and len(result.data) > 0:
+        return result.data[0]
+    return data
 
 
 # ============================================================

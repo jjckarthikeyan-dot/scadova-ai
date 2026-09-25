@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -213,6 +213,9 @@ class EmploymentProfileUpdate(BaseModel):
 
         if self.employment_type == EmploymentType.SALARIED:
 
+            if self.net_monthly_salary is None and self.gross_monthly_salary is not None:
+                self.net_monthly_salary = self.gross_monthly_salary
+
             missing = []
 
             if not self.company_name:
@@ -249,6 +252,22 @@ class EmploymentProfileUpdate(BaseModel):
                     + ", ".join(missing)
                 )
 
+        return self
+
+
+class EmploymentProfileWithApplicationId(EmploymentProfileUpdate):
+    """
+    Employment profile schema specifically designed for Sarvam AI voice tools/webhooks,
+    where application_id is provided directly in the request body.
+    """
+    application_id: int
+    employment_type: Optional[Union[EmploymentType, str]] = None
+
+    @model_validator(mode="after")
+    def validate_employment_details(self):
+        if self.employment_type == EmploymentType.SALARIED or str(self.employment_type).lower() in ("salaried", "employmenttype.salaried"):
+            if self.net_monthly_salary is None and self.gross_monthly_salary is not None:
+                self.net_monthly_salary = self.gross_monthly_salary
         return self
 
 

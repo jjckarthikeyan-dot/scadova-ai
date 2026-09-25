@@ -18,6 +18,9 @@ from backend.loan_agency.sarvam_router import router as sarvam_router
 from backend.appointment_booking.router import router as appointment_booking_router
 from backend.admin.routes import router as admin_router
 
+from backend.loan_agency.schemas import EmploymentProfileWithApplicationId
+from backend.loan_agency.router import save_employment_profile_from_body
+
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -52,6 +55,14 @@ app.include_router(
 # Loan Agency & Sarvam routers
 app.include_router(loan_agency_router)
 app.include_router(sarvam_router)
+
+# Direct aliases for Sarvam AI webhooks or root employment profile saves
+@app.put("/employment", tags=["Loan Agency"])
+@app.post("/employment", tags=["Loan Agency"])
+@app.put("/api/loan/employment", tags=["Loan Agency"])
+@app.post("/api/loan/employment", tags=["Loan Agency"])
+async def root_employment_alias(payload: EmploymentProfileWithApplicationId):
+    return await save_employment_profile_from_body(payload)
 
 # Service & Appointment Booking router
 app.include_router(appointment_booking_router)
