@@ -287,10 +287,16 @@ class EmploymentProfileWithApplicationId(BaseModel):
     @classmethod
     def empty_strings_to_none(cls, data):
         if isinstance(data, dict):
-            return {
-                key: None if (value == "" or (isinstance(value, str) and value.strip() == "")) else value
-                for key, value in data.items()
-            }
+            cleaned = {}
+
+            for key, value in data.items():
+                if isinstance(value, str) and value.strip() == "":
+                    cleaned[key] = None
+                else:
+                    cleaned[key] = value
+
+            return cleaned
+
         return data
 
     @model_validator(mode="after")
