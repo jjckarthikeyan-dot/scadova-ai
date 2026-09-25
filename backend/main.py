@@ -28,7 +28,9 @@ from backend.loan_agency.router import (
     save_employment_profile_from_body,
     save_personal_loan_profile_from_body,
     save_used_car_loan_profile_from_body,
-    save_business_loan_profile_from_body
+    save_business_loan_profile_from_body,
+    get_application_by_mobile,
+    get_all_applications_by_mobile
 )
 
 from fastapi import FastAPI, HTTPException
@@ -94,6 +96,14 @@ async def root_used_car_loans_alias(payload: UsedCarLoanProfileWithApplicationId
 @app.post("/api/loan/business-loans", tags=["Loan Agency"])
 async def root_business_loans_alias(payload: BusinessLoanProfileWithApplicationId):
     return await save_business_loan_profile_from_body(payload)
+
+@app.get("/api/loan/applications/mobile/{mobile_number}", tags=["Loan Agency"])
+async def root_get_application_by_mobile(mobile_number: str):
+    return await get_application_by_mobile(mobile_number)
+
+@app.get("/api/loan/applications/mobile/{mobile_number}/all", tags=["Loan Agency"])
+async def root_get_all_applications_by_mobile(mobile_number: str):
+    return await get_all_applications_by_mobile(mobile_number)
 
 # Service & Appointment Booking router
 app.include_router(appointment_booking_router)

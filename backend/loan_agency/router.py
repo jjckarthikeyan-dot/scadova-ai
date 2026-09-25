@@ -514,6 +514,147 @@ async def get_application_by_sarvam_interaction(
 
 
 # ============================================================
+# GET APPLICATION BY MOBILE NUMBER
+# ============================================================
+
+@router.get(
+    "/applications/mobile/{mobile_number}",
+    response_model=LoanApplicationResponse
+)
+async def get_application_by_mobile(
+    mobile_number: str
+):
+    """
+    Retrieve the latest loan application for a customer mobile number.
+    Supports normalized formatting (e.g. stripping spaces, hyphens) and country-code variants.
+    """
+    normalized_mobile = (
+        mobile_number
+        .replace(" ", "")
+        .replace("-", "")
+    )
+
+    try:
+        response = (
+            supabase
+            .table("loan_applications")
+            .select("*")
+            .eq("mobile_number", normalized_mobile)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+
+        if not response.data:
+            alt_numbers = []
+            if normalized_mobile.startswith("+91") and len(normalized_mobile) > 3:
+                alt_numbers.append(normalized_mobile[3:])
+            elif normalized_mobile.startswith("91") and len(normalized_mobile) == 12:
+                alt_numbers.append(normalized_mobile[2:])
+            elif len(normalized_mobile) == 10:
+                alt_numbers.append(f"+91{normalized_mobile}")
+                alt_numbers.append(f"91{normalized_mobile}")
+
+            for alt in alt_numbers:
+                alt_response = (
+                    supabase
+                    .table("loan_applications")
+                    .select("*")
+                    .eq("mobile_number", alt)
+                    .order("created_at", desc=True)
+                    .limit(1)
+                    .execute()
+                )
+                if alt_response.data:
+                    response = alt_response
+                    break
+
+        if not response.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No application found for this mobile number"
+            )
+
+        return response.data[0]
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("GET APPLICATION BY MOBILE ERROR")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@router.get("/applications/mobile/{mobile_number}/all")
+async def get_all_applications_by_mobile(
+    mobile_number: str
+):
+    """
+    Retrieve all applications for a customer mobile number ordered newest first.
+    """
+    normalized_mobile = (
+        mobile_number
+        .replace(" ", "")
+        .replace("-", "")
+    )
+
+    try:
+        response = (
+            supabase
+            .table("loan_applications")
+            .select("*")
+            .eq("mobile_number", normalized_mobile)
+            .order("created_at", desc=True)
+            .execute()
+        )
+
+        if not response.data:
+            alt_numbers = []
+            if normalized_mobile.startswith("+91") and len(normalized_mobile) > 3:
+                alt_numbers.append(normalized_mobile[3:])
+            elif normalized_mobile.startswith("91") and len(normalized_mobile) == 12:
+                alt_numbers.append(normalized_mobile[2:])
+            elif len(normalized_mobile) == 10:
+                alt_numbers.append(f"+91{normalized_mobile}")
+                alt_numbers.append(f"91{normalized_mobile}")
+
+            for alt in alt_numbers:
+                alt_response = (
+                    supabase
+                    .table("loan_applications")
+                    .select("*")
+                    .eq("mobile_number", alt)
+                    .order("created_at", desc=True)
+                    .execute()
+                )
+                if alt_response.data:
+                    response = alt_response
+                    break
+
+        if not response.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No applications found for this mobile number"
+            )
+
+        return {
+            "count": len(response.data),
+            "applications": response.data
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("GET ALL APPLICATIONS BY MOBILE ERROR")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+# ============================================================
 # 2. COMMON EMPLOYMENT PROFILE
 # ============================================================
 

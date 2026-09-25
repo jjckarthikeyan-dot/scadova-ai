@@ -16,7 +16,10 @@ from .router import (
     save_employment_profile_from_body,
     save_personal_loan_profile_from_body,
     save_used_car_loan_profile_from_body,
-    save_business_loan_profile_from_body
+    save_business_loan_profile_from_body,
+    get_loan_application,
+    get_application_by_mobile,
+    get_all_applications_by_mobile
 )
 
 logger = logging.getLogger("sarvam_router")
@@ -25,6 +28,30 @@ router = APIRouter(
     prefix="/api/sarvam",
     tags=["Sarvam AI"]
 )
+
+
+@router.get("/applications/{application_id}")
+async def sarvam_get_application_by_id(application_id: int):
+    """
+    Direct handler for Sarvam AI telephony tool calling /api/sarvam/applications/{application_id}.
+    """
+    return await get_loan_application(application_id)
+
+
+@router.get("/applications/mobile/{mobile_number}")
+async def sarvam_get_application_by_mobile(mobile_number: str):
+    """
+    Direct handler for Sarvam AI telephony tool calling /api/sarvam/applications/mobile/{mobile_number}.
+    """
+    return await get_application_by_mobile(mobile_number)
+
+
+@router.get("/applications/mobile/{mobile_number}/all")
+async def sarvam_get_all_applications_by_mobile(mobile_number: str):
+    """
+    Direct handler for Sarvam AI telephony tool calling /api/sarvam/applications/mobile/{mobile_number}/all.
+    """
+    return await get_all_applications_by_mobile(mobile_number)
 
 
 @router.put("/employment")

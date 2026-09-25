@@ -203,3 +203,67 @@ def test_business_and_used_car_loan_normalization():
     assert car.kilometers_driven == 0.0
     assert car.current_market_value is None
     assert car.down_payment == 50000.0
+
+
+@patch("backend.loan_agency.router.supabase")
+def test_get_application_by_mobile_success(mock_supabase):
+    mock_query = MagicMock()
+    mock_query.select.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value.data = [
+        {
+            "id": 99,
+            "full_name": "Ramesh Kumar",
+            "mobile_number": "9032008222",
+            "loan_type": "personal_loan",
+            "created_at": "2026-09-24T12:00:00Z"
+        }
+    ]
+    mock_supabase.table.return_value = mock_query
+
+    # Test with formatted mobile number (dashes/spaces)
+    response = client.get("/api/loan-agency/applications/mobile/903-200-8222")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["id"] == 99
+    assert data["mobile_number"] == "9032008222"
+    assert data["full_name"] == "Ramesh Kumar"
+
+
+@patch("backend.loan_agency.router.supabase")
+def test_get_application_by_mobile_not_found(mock_supabase):
+    mock_query = MagicMock()
+    mock_query.select.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value.data = []
+    mock_supabase.table.return_value = mock_query
+
+    response = client.get("/api/loan-agency/applications/mobile/9999999999")
+    assert response.status_code == 404
+    assert "No application found" in response.json()["detail"]
+
+
+@patch("backend.loan_agency.router.supabase")
+def test_get_all_applications_by_mobile(mock_supabase):
+    mock_query = MagicMock()
+    mock_query.select.return_value.eq.return_value.order.return_value.execute.return_value.data = [
+        {
+            "id": 105,
+            "full_name": "Priya Sharma",
+            "mobile_number": "9876543210",
+            "loan_type": "used_car_loan",
+            "created_at": "2026-09-24T15:00:00Z"
+        },
+        {
+            "id": 101,
+            "full_name": "Priya Sharma",
+            "mobile_number": "9876543210",
+            "loan_type": "personal_loan",
+            "created_at": "2026-09-20T10:00:00Z"
+        }
+    ]
+    mock_supabase.table.return_value = mock_query
+
+    response = client.get("/api/loan-agency/applications/mobile/9876543210/all")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["count"] == 2
+    assert len(data["applications"]) == 2
+    assert data["applications"][0]["id"] == 105
+    assert data["applications"][1]["id"] == 101
