@@ -4,10 +4,12 @@ from fastapi import APIRouter, HTTPException, status
 from backend.core.supabase import supabase
 from .sarvam_client import sarvam_client
 from .schemas import (
+    EmploymentProfileWithApplicationId,
     SarvamDeploymentRequest,
     SarvamOutboundCallRequest,
     SarvamWebhookPayload
 )
+from .router import save_employment_profile_from_body
 
 logger = logging.getLogger("sarvam_router")
 
@@ -15,6 +17,15 @@ router = APIRouter(
     prefix="/api/sarvam",
     tags=["Sarvam AI"]
 )
+
+
+@router.put("/employment")
+@router.post("/employment")
+async def sarvam_employment_endpoint(payload: EmploymentProfileWithApplicationId):
+    """
+    Direct handler for Sarvam AI telephony tool calling /api/sarvam/employment.
+    """
+    return await save_employment_profile_from_body(payload)
 
 
 @router.post("/deployments/inbound", status_code=status.HTTP_200_OK)
