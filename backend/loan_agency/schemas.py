@@ -258,7 +258,7 @@ class EmploymentProfileUpdate(BaseModel):
 class SarvamCleanBaseModel(BaseModel):
     """
     Reusable base model for voice telephony agents (Sarvam AI / Fish Audio / Retell)
-    that normalizes empty and whitespace-only strings to None before validation,
+    that normalizes empty strings, string nulls, and coerced numeric values before validation,
     preventing 422 Unprocessable Entity errors on optional numeric, boolean, or date fields.
     Preserves legitimate 0, 0.0, and False values.
     """
@@ -266,19 +266,46 @@ class SarvamCleanBaseModel(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def normalize_empty_values(cls, data):
-        if isinstance(data, dict):
-            cleaned = {}
+    def normalize_values(cls, data):
+        if not isinstance(data, dict):
+            return data
 
-            for key, value in data.items():
-                if isinstance(value, str) and value.strip() == "":
+        integer_fields = {
+            "application_id",
+            "manufacturing_year",
+            "registration_year",
+            "current_owner_number",
+            "kilometers_driven",
+            "cibil_score",
+            "preferred_tenure_months",
+            "business_start_year",
+        }
+
+        cleaned = {}
+        for key, value in data.items():
+            if isinstance(value, str):
+                value = value.strip()
+                if value.lower() in {
+                    "",
+                    "none",
+                    "null",
+                    "n/a",
+                    "na",
+                    "unknown",
+                }:
                     cleaned[key] = None
-                else:
-                    cleaned[key] = value
+                    continue
 
-            return cleaned
+            if key in integer_fields and value is not None:
+                try:
+                    cleaned[key] = int(float(value))
+                    continue
+                except (ValueError, TypeError):
+                    pass
 
-        return data
+            cleaned[key] = value
+
+        return cleaned
 
 
 class EmploymentProfileWithApplicationId(SarvamCleanBaseModel):

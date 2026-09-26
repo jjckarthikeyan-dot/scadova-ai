@@ -267,3 +267,52 @@ def test_get_all_applications_by_mobile(mock_supabase):
     assert len(data["applications"]) == 2
     assert data["applications"][0]["id"] == 105
     assert data["applications"][1]["id"] == 101
+
+
+def test_sarvam_clean_base_model_integer_and_null_normalization():
+    class DummyLoanModel(SarvamCleanBaseModel):
+        application_id: int | None = None
+        manufacturing_year: int | None = None
+        registration_year: int | None = None
+        current_owner_number: int | None = None
+        kilometers_driven: int | None = None
+        cibil_score: int | None = None
+        preferred_tenure_months: int | None = None
+        business_start_year: int | None = None
+        city: str | None = None
+
+    payload = DummyLoanModel.model_validate({
+        "application_id": "105.0",
+        "manufacturing_year": 2019.0,
+        "registration_year": "2020",
+        "current_owner_number": "1",
+        "kilometers_driven": "45000.5",
+        "cibil_score": "750",
+        "preferred_tenure_months": 36.0,
+        "business_start_year": "2018",
+        "city": "N/A"
+    })
+
+    assert payload.application_id == 105
+    assert payload.manufacturing_year == 2019
+    assert payload.registration_year == 2020
+    assert payload.current_owner_number == 1
+    assert payload.kilometers_driven == 45000
+    assert payload.cibil_score == 750
+    assert payload.preferred_tenure_months == 36
+    assert payload.business_start_year == 2018
+    assert payload.city is None
+
+    null_cases = DummyLoanModel.model_validate({
+        "application_id": "null",
+        "manufacturing_year": "none",
+        "registration_year": "na",
+        "cibil_score": "unknown",
+        "city": "   "
+    })
+    assert null_cases.application_id is None
+    assert null_cases.manufacturing_year is None
+    assert null_cases.registration_year is None
+    assert null_cases.cibil_score is None
+    assert null_cases.city is None
+
