@@ -1,7 +1,8 @@
+from datetime import datetime
 import logging
 import uuid
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException, status
 
@@ -239,6 +240,102 @@ def ensure_application_exists(application_id: int) -> Dict[str, Any]:
         )
 
     return AwaitableDict(response.data[0])
+
+
+def normalize_date(value: Any) -> Optional[str]:
+    """
+    Normalizes common string date formats to ISO YYYY-MM-DD.
+    Returns None for empty/null representations or unparseable formats.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        value = value.strip()
+        if value.lower() in {"", "none", "null", "n/a", "na", "unknown"}:
+            return None
+        # Already ISO
+        try:
+            return datetime.strptime(value, "%Y-%m-%d").date().isoformat()
+        except ValueError:
+            pass
+        # Common formats
+        for fmt in (
+            "%B %d %Y",
+            "%B %d, %Y",
+            "%d %B %Y",
+            "%m/%d/%Y",
+            "%d/%m/%Y",
+            "%Y/%m/%d",
+        ):
+            try:
+                return datetime.strptime(value, fmt).date().isoformat()
+            except ValueError:
+                continue
+    elif hasattr(value, "isoformat"):
+        return value.isoformat()
+    return None
+
+
+def clean_used_car_data(data: dict) -> dict:
+    """
+    Normalizes used car loan payload before database operations:
+    - Strips empty and null-like strings ("none", "null", "n/a", etc.)
+    - Coerces integer fields (e.g. "20000.0" -> 20000)
+    - Normalizes insurance_validity date strings to ISO YYYY-MM-DD
+    - Filters to known database columns
+    - Omits None values
+    """
+    if not isinstance(data, dict):
+        return data
+
+    integer_fields = {
+        "application_id",
+        "manufacturing_year",
+        "registration_year",
+        "current_owner_number",
+        "kilometers_driven",
+        "cibil_score",
+        "preferred_tenure_months",
+    }
+
+    cleaned = {}
+    for key, value in data.items():
+        if key not in USED_CAR_LOAN_COLUMNS and key != "application_id":
+            continue
+
+        if isinstance(value, str):
+            value = value.strip()
+            if value.lower() in {
+                "",
+                "none",
+                "null",
+                "n/a",
+                "na",
+                "unknown",
+            }:
+                continue
+
+        if key in integer_fields and value is not None:
+            try:
+                cleaned[key] = int(float(value))
+                continue
+            except (ValueError, TypeError):
+                continue
+
+        if key == "insurance_validity":
+            parsed = normalize_date(value)
+            if parsed is not None:
+                cleaned["insurance_validity"] = parsed
+            continue
+
+        cleaned[key] = value
+
+    # Remove null fields completely
+    return {
+        key: value
+        for key, value in cleaned.items()
+        if value is not None
+    }
 
 
 # ============================================================
@@ -1040,26 +1137,19 @@ async def update_used_car_loan_profile(
             )
 
 
-        raw_data = payload.model_dump(
+        data = payload.model_dump(
             exclude_none=True
         )
+        data["application_id"] = application_id
+        data = clean_used_car_data(data)
 
-
-        clean_data = {
-            key: value
-            for key, value in raw_data.items()
-            if key in USED_CAR_LOAN_COLUMNS
-        }
-
+        print("USED CAR DATA BEFORE SUPABASE:", data)
 
         response = (
             supabase
             .table("used_car_loan_profiles")
             .upsert(
-                {
-                    "application_id": application_id,
-                    **clean_data
-                },
+                data,
                 on_conflict="application_id"
             )
             .execute()
@@ -1112,18 +1202,15 @@ async def save_used_car_loan_profile_from_body(
         exclude={"application_id"},
         exclude_none=True
     )
+    data["application_id"] = payload.application_id
+    data = clean_used_car_data(data)
 
-    clean_data = {
-        key: value
-        for key, value in data.items()
-        if key in USED_CAR_LOAN_COLUMNS
-    }
-    clean_data["application_id"] = application_id
+    print("USED CAR DATA BEFORE SUPABASE:", data)
 
     result = (
         supabase.table("used_car_loan_profiles")
         .upsert(
-            clean_data,
+            data,
             on_conflict="application_id"
         )
         .execute()
@@ -1131,7 +1218,7 @@ async def save_used_car_loan_profile_from_body(
 
     if result.data and len(result.data) > 0:
         return result.data[0]
-    return clean_data
+    return data
 
 
 @router.get(

@@ -10,6 +10,10 @@ from backend.loan_agency.schemas import (
     SarvamCleanBaseModel,
     EmploymentType
 )
+from backend.loan_agency.router import (
+    normalize_date,
+    clean_used_car_data
+)
 
 client = TestClient(app)
 
@@ -315,4 +319,103 @@ def test_sarvam_clean_base_model_integer_and_null_normalization():
     assert null_cases.registration_year is None
     assert null_cases.cibil_score is None
     assert null_cases.city is None
+
+
+def test_normalize_date_formats():
+    # Null and empty representations
+    assert normalize_date(None) is None
+    assert normalize_date("") is None
+    assert normalize_date("   ") is None
+    assert normalize_date("none") is None
+    assert normalize_date("null") is None
+    assert normalize_date("N/A") is None
+    assert normalize_date("na") is None
+    assert normalize_date("unknown") is None
+
+    # Valid formats normalized to ISO YYYY-MM-DD
+    assert normalize_date("2027-03-31") == "2027-03-31"
+    assert normalize_date("March 31 2027") == "2027-03-31"
+    assert normalize_date("March 31, 2027") == "2027-03-31"
+    assert normalize_date("31 March 2027") == "2027-03-31"
+    assert normalize_date("03/31/2027") == "2027-03-31"
+
+    # Unparseable
+    assert normalize_date("invalid-date-string") is None
+
+
+def test_clean_used_car_data():
+    raw = {
+        "application_id": 42,
+        "kilometers_driven": "20000.0",
+        "manufacturing_year": 2019.0,
+        "cibil_score": "750",
+        "insurance_validity": "March 31 2027",
+        "car_make": "Maruti",
+        "car_model": "Swift",
+        "rc_status": "none",
+        "accident_history": "N/A",
+        "unrecognized_field": "should_be_omitted"
+    }
+
+    cleaned = clean_used_car_data(raw)
+
+    assert cleaned["application_id"] == 42
+    assert cleaned["kilometers_driven"] == 20000
+    assert isinstance(cleaned["kilometers_driven"], int)
+    assert cleaned["manufacturing_year"] == 2019
+    assert isinstance(cleaned["manufacturing_year"], int)
+    assert cleaned["cibil_score"] == 750
+    assert isinstance(cleaned["cibil_score"], int)
+    assert cleaned["insurance_validity"] == "2027-03-31"
+    assert cleaned["car_make"] == "Maruti"
+    assert cleaned["car_model"] == "Swift"
+    assert "rc_status" not in cleaned
+    assert "accident_history" not in cleaned
+    assert "unrecognized_field" not in cleaned
+
+
+@patch("backend.loan_agency.router.supabase")
+def test_used_car_loan_route_data_cleaning(mock_supabase):
+    # Mock application check
+    app_mock = MagicMock()
+    app_mock.select.return_value.eq.return_value.limit.return_value.execute.return_value.data = [
+        {"id": 42, "loan_type": "used_car_loan"}
+    ]
+
+    # Mock upsert execute
+    upsert_mock = MagicMock()
+    upsert_mock.execute.return_value.data = [{"application_id": 42, "car_make": "Hyundai"}]
+
+    used_car_table = MagicMock()
+    used_car_table.upsert.return_value = upsert_mock
+
+    def table_side_effect(name):
+        if name == "loan_applications":
+            return app_mock
+        if name == "used_car_loan_profiles":
+            return used_car_table
+        return MagicMock()
+
+    mock_supabase.table.side_effect = table_side_effect
+
+    payload = {
+        "application_id": 42,
+        "car_make": "Hyundai",
+        "kilometers_driven": "20000.0",
+        "insurance_validity": "March 31 2027",
+        "accident_history": "N/A"
+    }
+
+    response = client.post("/api/loan-agency/used-car-loans", json=payload)
+    assert response.status_code == 200
+
+    # Verify that clean_used_car_data was used before upserting into Supabase
+    upsert_call_args = used_car_table.upsert.call_args
+    upserted_data = upsert_call_args[0][0]
+    assert upserted_data["application_id"] == 42
+    assert upserted_data["kilometers_driven"] == 20000
+    assert isinstance(upserted_data["kilometers_driven"], int)
+    assert upserted_data["insurance_validity"] == "2027-03-31"
+    assert "accident_history" not in upserted_data
+
 
