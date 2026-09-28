@@ -39,10 +39,12 @@ from .schemas import (
 
     LeadResponse,
     LeadContextResponse,
+    LinkLeadApplication,
 )
 
 
 logger = logging.getLogger("loan_agency_router")
+
 
 
 router = APIRouter(
@@ -2191,6 +2193,32 @@ async def loan_agency_campaign_webhook_endpoint(payload: Dict[str, Any]):
 async def loan_agency_cohort_status_endpoint(cohort_id: str, campaign_id: Optional[str] = None):
     from .sarvam_router import get_cohort_status
     return await get_cohort_status(cohort_id=cohort_id, campaign_id=campaign_id)
+
+
+@router.put("/leads/link-application", status_code=status.HTTP_200_OK)
+@router.post("/leads/link-application", status_code=status.HTTP_200_OK)
+async def link_application_to_lead(payload: LinkLeadApplication):
+    result = (
+        supabase.table("loan_leads")
+        .update({
+            "latest_application_id": payload.application_id,
+            "application_created": True,
+            "lead_status": "application_started"
+        })
+        .eq("id", payload.lead_id)
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(
+            status_code=404,
+            detail="Lead not found"
+        )
+    return {
+        "success": True,
+        "lead_id": payload.lead_id,
+        "application_id": payload.application_id
+    }
+
 
 
 

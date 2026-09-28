@@ -675,6 +675,40 @@ def test_get_cohort_status(mock_get):
         assert data["status"] == "completed"
 
 
+@patch("backend.loan_agency.router.supabase")
+def test_link_application_to_lead_success(mock_supabase):
+    mock_query = MagicMock()
+    mock_query.update.return_value.eq.return_value.execute.return_value.data = [
+        {"id": 5, "latest_application_id": 33, "application_created": True, "lead_status": "application_started"}
+    ]
+    mock_supabase.table.return_value = mock_query
+
+    response = client.put("/api/loan-agency/leads/link-application", json={"lead_id": 5, "application_id": 33})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["success"] is True
+    assert data["lead_id"] == 5
+    assert data["application_id"] == 33
+
+    # Verify update payload
+    args = mock_query.update.call_args[0][0]
+    assert args["latest_application_id"] == 33
+    assert args["application_created"] is True
+    assert args["lead_status"] == "application_started"
+
+
+@patch("backend.loan_agency.router.supabase")
+def test_link_application_to_lead_not_found(mock_supabase):
+    mock_query = MagicMock()
+    mock_query.update.return_value.eq.return_value.execute.return_value.data = []
+    mock_supabase.table.return_value = mock_query
+
+    response = client.put("/api/loan-agency/leads/link-application", json={"lead_id": 9999, "application_id": 33})
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Lead not found"
+
+
+
 
 
 

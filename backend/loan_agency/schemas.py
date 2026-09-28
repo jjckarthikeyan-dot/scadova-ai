@@ -1146,3 +1146,10 @@ class LeadContextResponse(BaseModel):
     product_profile: Optional[Dict[str, Any]] = None
 
 
+class LinkLeadApplication(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    lead_id: int
+    application_id: int
+
+
+

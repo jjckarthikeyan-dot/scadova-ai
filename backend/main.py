@@ -24,7 +24,8 @@ from backend.loan_agency.schemas import (
     EmploymentProfileWithApplicationId,
     PersonalLoanProfileWithApplicationId,
     UsedCarLoanProfileWithApplicationId,
-    BusinessLoanProfileWithApplicationId
+    BusinessLoanProfileWithApplicationId,
+    LinkLeadApplication
 )
 from backend.loan_agency.router import (
     save_employment_profile_from_body,
@@ -34,8 +35,10 @@ from backend.loan_agency.router import (
     get_application_by_mobile,
     get_all_applications_by_mobile,
     get_lead_by_phone,
-    get_lead_context
+    get_lead_context,
+    link_application_to_lead
 )
+
 
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
@@ -116,6 +119,16 @@ async def root_get_lead_by_phone(phone_number: str):
 @app.get("/api/loan/leads/context/{phone_number}", tags=["Loan Agency"])
 async def root_get_lead_context(phone_number: str):
     return await get_lead_context(phone_number)
+
+@app.put("/leads/link-application", tags=["Loan Agency"])
+@app.post("/leads/link-application", tags=["Loan Agency"])
+@app.put("/api/loan/leads/link-application", tags=["Loan Agency"])
+@app.post("/api/loan/leads/link-application", tags=["Loan Agency"])
+@app.put("/api/loan-agency/leads/link-application", tags=["Loan Agency"])
+@app.post("/api/loan-agency/leads/link-application", tags=["Loan Agency"])
+async def root_link_application_alias(payload: LinkLeadApplication):
+    return await link_application_to_lead(payload)
+
 
 from backend.loan_agency.sarvam_router import (
     create_outbound_campaign,
