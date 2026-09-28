@@ -638,8 +638,12 @@ def test_stream_leads_success_with_overrides(mock_supabase, mock_post):
         assert posted_users[0]["user_identifier"] == "2"
         assert posted_users[0]["app_variables"]["lead_id"] == "2"
         assert posted_users[0]["app_variables"]["full_name"] == "Karthikeyan"
+        assert posted_users[0]["app_variables"]["phone_number"] == "+919032008222"
+        assert posted_users[0]["app_variables"]["city"] == "Hyderabad"
         assert posted_users[0]["app_variables"]["preferred_language"] == "Telugu"
+        assert posted_users[0]["app_variables"]["lead_status"] == "new"
         assert posted_users[0]["app_overrides"]["initial_language_name"] == "Telugu"
+
 
         # User 2 has no preferred_language -> app_overrides omitted
         assert posted_users[1]["user_phone_number"] == "+919876543210"

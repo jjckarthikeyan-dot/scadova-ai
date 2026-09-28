@@ -601,9 +601,12 @@ async def stream_leads_to_campaign(
         app_variables = {
             "lead_id": str(lead["id"]),
             "full_name": lead.get("full_name") or "",
+            "phone_number": lead.get("phone_number") or "",
             "city": lead.get("city") or "",
-            "preferred_language": lead.get("preferred_language") or ""
+            "preferred_language": lead.get("preferred_language") or "",
+            "lead_status": lead.get("lead_status") or "new"
         }
+
 
         user_entry = {
             "user_phone_number": phone,
