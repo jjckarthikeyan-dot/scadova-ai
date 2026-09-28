@@ -36,6 +36,9 @@ from .schemas import (
 
     FOIRCalculatorRequest,
     FOIRCalculatorResponse,
+
+    LeadResponse,
+    LeadContextResponse,
 )
 
 
@@ -1796,3 +1799,291 @@ async def calculate_foir(
         is_eligible=
             is_eligible
     )
+
+
+# ============================================================
+# 8. OUTBOUND LEADS & CALL CONTEXT (PHASE 2.2)
+# ============================================================
+
+def normalize_lead_phone(phone_number: str) -> str:
+    """
+    Normalize Indian phone numbers to canonical E.164 (+91XXXXXXXXXX) format.
+    Handles spaces, dashes, URL encoding variants, 10-digit formats, and missing + prefixes.
+    """
+    normalized = (
+        phone_number
+        .strip()
+        .replace(" ", "")
+        .replace("-", "")
+    )
+    # Normalize Indian numbers to +91XXXXXXXXXX
+    if normalized.startswith("91") and not normalized.startswith("+91"):
+        normalized = f"+{normalized}"
+    elif len(normalized) == 10 and normalized.isdigit():
+        normalized = f"+91{normalized}"
+
+    return normalized
+
+
+@router.get(
+    "/leads/by-phone/{phone_number}",
+    response_model=LeadResponse,
+    status_code=status.HTTP_200_OK
+)
+async def get_lead_by_phone(phone_number: str):
+    """
+    Retrieve lead by phone number from the outbound queue/master table (loan_leads).
+    Automatically normalizes phone numbers and checks alternate formatting if needed.
+    """
+    normalized = normalize_lead_phone(phone_number)
+
+    try:
+        result = (
+            supabase.table("loan_leads")
+            .select("*")
+            .eq("phone_number", normalized)
+            .limit(1)
+            .execute()
+        )
+
+        if not result.data:
+            alt_numbers = []
+            if normalized.startswith("+91") and len(normalized) == 13:
+                alt_numbers.append(normalized[3:])  # 10 digits
+                alt_numbers.append(normalized[1:])  # 91...
+            elif len(normalized) == 10:
+                alt_numbers.append(normalized)
+                alt_numbers.append(f"91{normalized}")
+
+            for alt in alt_numbers:
+                alt_res = (
+                    supabase.table("loan_leads")
+                    .select("*")
+                    .eq("phone_number", alt)
+                    .limit(1)
+                    .execute()
+                )
+                if alt_res.data:
+                    result = alt_res
+                    break
+
+        if not result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Lead not found"
+            )
+
+        return result.data[0]
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("GET LEAD BY PHONE ERROR")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@router.get(
+    "/leads/context/{phone_number}",
+    response_model=LeadContextResponse,
+    status_code=status.HTTP_200_OK
+)
+async def get_lead_context(phone_number: str):
+    """
+    Consolidated lead context endpoint called before Sarvam outbound automation.
+    Returns in one response:
+    lead details
+    + preferred language
+    + latest application
+    + application status
+    + employment completion
+    + product profile completion
+    + follow-up/callback/reschedule/retry state
+    + last completed step
+    + next action
+    """
+    normalized = (
+        phone_number
+        .strip()
+        .replace(" ", "")
+        .replace("-", "")
+    )
+    if normalized.startswith("91") and not normalized.startswith("+91"):
+        normalized = f"+{normalized}"
+    elif len(normalized) == 10 and normalized.isdigit():
+        normalized = f"+91{normalized}"
+
+    lead_result = (
+        supabase.table("loan_leads")
+        .select("*")
+        .eq("phone_number", normalized)
+        .limit(1)
+        .execute()
+    )
+
+    if not lead_result.data:
+        # Fallback check for alternate formats
+        alt_numbers = []
+        if normalized.startswith("+91") and len(normalized) == 13:
+            alt_numbers.append(normalized[3:])
+            alt_numbers.append(normalized[1:])
+        elif len(normalized) == 10:
+            alt_numbers.append(normalized)
+            alt_numbers.append(f"91{normalized}")
+
+        for alt in alt_numbers:
+            alt_res = (
+                supabase.table("loan_leads")
+                .select("*")
+                .eq("phone_number", alt)
+                .limit(1)
+                .execute()
+            )
+            if alt_res.data:
+                lead_result = alt_res
+                break
+
+    if not lead_result.data:
+        return {
+            "lead_found": False,
+            "phone_number": normalized
+        }
+
+    lead = lead_result.data[0]
+    application = None
+    employment_profile = None
+    product_profile = None
+    employment_completed = False
+    product_profile_completed = False
+    application_id = lead.get("latest_application_id")
+    application_status = None
+    loan_type = None
+
+    if application_id:
+        try:
+            app_res = (
+                supabase.table("loan_applications")
+                .select("*")
+                .eq("id", application_id)
+                .limit(1)
+                .execute()
+            )
+            if app_res.data:
+                application = app_res.data[0]
+        except Exception:
+            pass
+
+    if not application:
+        try:
+            app_by_mobile = (
+                supabase.table("loan_applications")
+                .select("*")
+                .eq("mobile_number", normalized)
+                .order("created_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+            if app_by_mobile.data:
+                application = app_by_mobile.data[0]
+                application_id = application.get("id")
+        except Exception:
+            pass
+
+    if application:
+        application_status = application.get("status")
+        loan_type = application.get("loan_type")
+        app_rec_id = application.get("id")
+
+        try:
+            emp_res = (
+                supabase.table("employment_profiles")
+                .select("*")
+                .eq("application_id", app_rec_id)
+                .limit(1)
+                .execute()
+            )
+            if emp_res.data:
+                employment_profile = emp_res.data[0]
+                employment_completed = True
+        except Exception:
+            pass
+
+        table_map = {
+            "personal_loan": "personal_loan_profiles",
+            "used_car_loan": "used_car_loan_profiles",
+            "business_loan": "business_loan_profiles",
+        }
+        target_table = table_map.get(loan_type)
+        if target_table:
+            try:
+                prof_res = (
+                    supabase.table(target_table)
+                    .select("*")
+                    .eq("application_id", app_rec_id)
+                    .limit(1)
+                    .execute()
+                )
+                if prof_res.data:
+                    product_profile = prof_res.data[0]
+                    product_profile_completed = True
+            except Exception:
+                pass
+
+    preferred_language = (
+        lead.get("preferred_language")
+        or (application.get("preferred_language") if application else None)
+        or "Telugu"
+    )
+
+    followup_state = {
+        "followup_required": bool(lead.get("followup_required")),
+        "next_followup_at": lead.get("next_followup_at"),
+        "followup_1_at": lead.get("followup_1_at"),
+        "followup_1_status": lead.get("followup_1_status"),
+        "followup_2_at": lead.get("followup_2_at"),
+        "followup_2_status": lead.get("followup_2_status"),
+        "followup_3_at": lead.get("followup_3_at"),
+        "followup_3_status": lead.get("followup_3_status"),
+    }
+
+    callback_state = {
+        "callback_required": bool(lead.get("callback_required")),
+        "callback_at": lead.get("callback_at"),
+        "reschedule_required": bool(lead.get("reschedule_required")),
+        "reschedule_at": lead.get("reschedule_at")
+    }
+
+    retry_state = {
+        "retry_required": bool(lead.get("retry_required")),
+        "retry_count": int(lead.get("retry_count") or 0),
+        "next_retry_at": lead.get("next_retry_at")
+    }
+
+    return {
+        "lead_found": True,
+        "full_name": lead.get("full_name"),
+        "phone_number": normalized,
+        "lead_status": lead.get("lead_status", "new"),
+        "preferred_language": preferred_language,
+        "city": lead.get("city"),
+        "call_status": lead.get("call_status", "not_called"),
+        "application_created": bool(lead.get("application_created") or application is not None),
+        "application_id": application_id,
+        "application_status": application_status,
+        "loan_type": loan_type,
+        "employment_completed": employment_completed,
+        "product_profile_completed": product_profile_completed,
+        "last_completed_step": lead.get("last_completed_step"),
+        "next_action": lead.get("next_action"),
+        "followup_state": followup_state,
+        "callback_state": callback_state,
+        "retry_state": retry_state,
+        "lead": lead,
+        "application": application,
+        "employment_profile": employment_profile,
+        "product_profile": product_profile
+    }
+
+

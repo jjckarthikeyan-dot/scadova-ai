@@ -294,3 +294,73 @@ BEGIN
         ALTER TABLE loan_callbacks ADD CONSTRAINT loan_callbacks_application_id_fkey FOREIGN KEY (application_id) REFERENCES loan_applications(id) ON DELETE SET NULL;
     END IF;
 END $$;
+
+-- 10. Loan Leads Master Queue Table (Phase 2.2 Outbound Engine)
+CREATE TABLE IF NOT EXISTS loan_leads (
+    id BIGSERIAL PRIMARY KEY,
+    source_lead_id TEXT,
+    source_created_at TIMESTAMPTZ,
+    adset_id TEXT,
+    adset_name TEXT,
+    campaign_id TEXT,
+    campaign_name TEXT,
+    form_id TEXT,
+    form_name TEXT,
+    platform TEXT DEFAULT 'fb',
+    full_name TEXT,
+    phone_number TEXT NOT NULL,
+    email TEXT,
+    city TEXT,
+    preferred_language TEXT,
+    lead_status TEXT DEFAULT 'new',
+    call_status TEXT DEFAULT 'not_called',
+    latest_application_id BIGINT REFERENCES loan_applications(id) ON DELETE SET NULL,
+    application_created BOOLEAN DEFAULT false,
+    application_completed BOOLEAN DEFAULT false,
+    followup_required BOOLEAN DEFAULT false,
+    next_followup_at TIMESTAMPTZ,
+    followup_1_at TIMESTAMPTZ,
+    followup_1_status TEXT,
+    followup_2_at TIMESTAMPTZ,
+    followup_2_status TEXT,
+    followup_3_at TIMESTAMPTZ,
+    followup_3_status TEXT,
+    callback_required BOOLEAN DEFAULT false,
+    callback_at TIMESTAMPTZ,
+    reschedule_required BOOLEAN DEFAULT false,
+    reschedule_at TIMESTAMPTZ,
+    retry_required BOOLEAN DEFAULT false,
+    retry_count INTEGER DEFAULT 0,
+    next_retry_at TIMESTAMPTZ,
+    last_call_status TEXT,
+    last_call_end_reason TEXT,
+    last_call_at TIMESTAMPTZ,
+    last_completed_step TEXT,
+    next_action TEXT,
+    call_success BOOLEAN DEFAULT false,
+    lead_success BOOLEAN DEFAULT false,
+
+    -- Outbound Scheduler & Queue Fields
+    ready_for_call BOOLEAN DEFAULT true,
+    call_after TIMESTAMPTZ,
+    priority INTEGER DEFAULT 1,
+    attempt_count INTEGER DEFAULT 0,
+    next_call_at TIMESTAMPTZ,
+
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Ensure scheduler columns exist if table was already created
+ALTER TABLE loan_leads
+    ADD COLUMN IF NOT EXISTS ready_for_call BOOLEAN DEFAULT true,
+    ADD COLUMN IF NOT EXISTS call_after TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS priority INTEGER DEFAULT 1,
+    ADD COLUMN IF NOT EXISTS attempt_count INTEGER DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS next_call_at TIMESTAMPTZ;
+
+-- Indices for outbound scheduler and lookup speed
+CREATE INDEX IF NOT EXISTS idx_loan_leads_phone ON loan_leads(phone_number);
+CREATE INDEX IF NOT EXISTS idx_loan_leads_call_status ON loan_leads(call_status);
+CREATE INDEX IF NOT EXISTS idx_loan_leads_next_call ON loan_leads(next_call_at) WHERE ready_for_call = true;
+

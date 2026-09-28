@@ -419,3 +419,101 @@ def test_used_car_loan_route_data_cleaning(mock_supabase):
     assert "accident_history" not in upserted_data
 
 
+@patch("backend.loan_agency.router.supabase")
+def test_get_lead_by_phone_endpoint(mock_supabase):
+    mock_lead = {
+        "id": 2,
+        "full_name": "Karthikeyan",
+        "phone_number": "+919032008222",
+        "lead_status": "new",
+        "call_status": "not_called"
+    }
+    table_mock = MagicMock()
+    table_mock.select.return_value.eq.return_value.limit.return_value.execute.return_value.data = [mock_lead]
+    mock_supabase.table.return_value = table_mock
+
+    response = client.get("/api/loan-agency/leads/by-phone/+919032008222")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["id"] == 2
+    assert data["full_name"] == "Karthikeyan"
+    assert data["phone_number"] == "+919032008222"
+
+
+@patch("backend.loan_agency.router.supabase")
+def test_get_lead_by_phone_not_found(mock_supabase):
+    table_mock = MagicMock()
+    table_mock.select.return_value.eq.return_value.limit.return_value.execute.return_value.data = []
+    mock_supabase.table.return_value = table_mock
+
+    response = client.get("/api/loan-agency/leads/by-phone/+919999999999")
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Lead not found"
+
+
+@patch("backend.loan_agency.router.supabase")
+def test_get_lead_context_endpoint(mock_supabase):
+    mock_lead = {
+        "id": 2,
+        "full_name": "Karthikeyan",
+        "phone_number": "+919032008222",
+        "preferred_language": "Telugu",
+        "lead_status": "new",
+        "call_status": "not_called",
+        "latest_application_id": None,
+        "application_created": False,
+        "application_completed": False,
+        "followup_required": False,
+        "callback_required": False,
+        "retry_required": False,
+        "retry_count": 0
+    }
+    
+    lead_table = MagicMock()
+    lead_table.select.return_value.eq.return_value.limit.return_value.execute.return_value.data = [mock_lead]
+    
+    app_table = MagicMock()
+    app_table.select.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value.data = []
+    
+    cb_table = MagicMock()
+    cb_table.select.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value.data = []
+
+    def table_side_effect(name):
+        if name == "loan_leads":
+            return lead_table
+        if name == "loan_applications":
+            return app_table
+        if name == "callbacks":
+            return cb_table
+        return MagicMock()
+
+    mock_supabase.table.side_effect = table_side_effect
+
+    response = client.get("/api/loan-agency/leads/context/+919032008222")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["lead_found"] is True
+    assert data["phone_number"] == "+919032008222"
+    assert data["full_name"] == "Karthikeyan"
+    assert data["preferred_language"] == "Telugu"
+    assert data["application_created"] is False
+    assert data["employment_completed"] is False
+    assert data["product_profile_completed"] is False
+    assert data["lead"]["id"] == 2
+
+
+@patch("backend.loan_agency.router.supabase")
+def test_get_lead_context_not_found(mock_supabase):
+    table_mock = MagicMock()
+    table_mock.select.return_value.eq.return_value.limit.return_value.execute.return_value.data = []
+    mock_supabase.table.return_value = table_mock
+
+    response = client.get("/api/loan-agency/leads/context/+919999999998")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["lead_found"] is False
+    assert data["phone_number"] == "+919999999998"
+
+
+
+

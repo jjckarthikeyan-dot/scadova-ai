@@ -1006,3 +1006,141 @@ class SarvamWebhookPayload(BaseModel):
     recording_url: Optional[str] = None
 
     data: Optional[Dict[str, Any]] = None
+
+
+# ============================================================
+# OUTBOUND LEADS & CONTEXT SCHEMAS (PHASE 2.2)
+# ============================================================
+
+class LeadResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    id: int
+    source_lead_id: Optional[str] = None
+    source_created_at: Optional[Any] = None
+    adset_id: Optional[str] = None
+    adset_name: Optional[str] = None
+    campaign_id: Optional[str] = None
+    campaign_name: Optional[str] = None
+    form_id: Optional[str] = None
+    form_name: Optional[str] = None
+    platform: Optional[str] = None
+    full_name: Optional[str] = None
+    phone_number: str
+    email: Optional[str] = None
+    city: Optional[str] = None
+    preferred_language: Optional[str] = None
+    lead_status: Optional[str] = "new"
+    call_status: Optional[str] = "not_called"
+    latest_application_id: Optional[Union[int, str]] = None
+    application_created: Optional[bool] = False
+    application_completed: Optional[bool] = False
+    followup_required: Optional[bool] = False
+    next_followup_at: Optional[Any] = None
+    followup_1_at: Optional[Any] = None
+    followup_1_status: Optional[str] = None
+    followup_2_at: Optional[Any] = None
+    followup_2_status: Optional[str] = None
+    followup_3_at: Optional[Any] = None
+    followup_3_status: Optional[str] = None
+    callback_required: Optional[bool] = False
+    callback_at: Optional[Any] = None
+    reschedule_required: Optional[bool] = False
+    reschedule_at: Optional[Any] = None
+    retry_required: Optional[bool] = False
+    retry_count: Optional[int] = 0
+    next_retry_at: Optional[Any] = None
+    last_call_status: Optional[str] = None
+    last_call_end_reason: Optional[str] = None
+    last_call_at: Optional[Any] = None
+    last_completed_step: Optional[str] = None
+    next_action: Optional[str] = None
+    call_success: Optional[bool] = False
+    lead_success: Optional[bool] = False
+
+    # Scheduler fields
+    ready_for_call: Optional[bool] = True
+    call_after: Optional[Any] = None
+    priority: Optional[int] = 1
+    attempt_count: Optional[int] = 0
+    next_call_at: Optional[Any] = None
+
+    created_at: Optional[Any] = None
+    updated_at: Optional[Any] = None
+
+
+class LeadApplicationState(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    application_created: bool = False
+    application_completed: bool = False
+    latest_application_id: Optional[Union[int, str]] = None
+    application_status: Optional[str] = "NOT_STARTED"
+    last_completed_step: Optional[str] = None
+    loan_type: Optional[str] = None
+    requested_amount: Optional[float] = None
+
+
+class LeadFollowupState(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    followup_required: bool = False
+    next_followup_at: Optional[Any] = None
+    followup_1_at: Optional[Any] = None
+    followup_1_status: Optional[str] = None
+    followup_2_at: Optional[Any] = None
+    followup_2_status: Optional[str] = None
+    followup_3_at: Optional[Any] = None
+    followup_3_status: Optional[str] = None
+
+
+class LeadCallbackRescheduleState(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    callback_required: bool = False
+    callback_at: Optional[Any] = None
+    reschedule_required: bool = False
+    reschedule_at: Optional[Any] = None
+    active_callback: Optional[Dict[str, Any]] = None
+
+
+class LeadRetryState(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    retry_required: bool = False
+    retry_count: int = 0
+    next_retry_at: Optional[Any] = None
+    max_retries: int = 3
+    max_retries_reached: bool = False
+
+
+class LeadContextResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    lead_found: bool = True
+    phone_number: str
+    full_name: Optional[str] = None
+    lead_status: Optional[str] = None
+    preferred_language: Optional[str] = None
+    city: Optional[str] = None
+    call_status: Optional[str] = None
+
+    application_created: Optional[bool] = False
+    application_id: Optional[Union[int, str]] = None
+    application_status: Optional[str] = None
+    loan_type: Optional[str] = None
+    employment_completed: Optional[bool] = False
+    product_profile_completed: Optional[bool] = False
+    last_completed_step: Optional[str] = None
+    next_action: Optional[str] = None
+
+    followup_state: Optional[Dict[str, Any]] = None
+    callback_state: Optional[Dict[str, Any]] = None
+    retry_state: Optional[Dict[str, Any]] = None
+
+    lead: Optional[Dict[str, Any]] = None
+    application: Optional[Dict[str, Any]] = None
+    employment_profile: Optional[Dict[str, Any]] = None
+    product_profile: Optional[Dict[str, Any]] = None
+
+
