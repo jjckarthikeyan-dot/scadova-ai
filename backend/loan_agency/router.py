@@ -2241,7 +2241,8 @@ async def link_application_to_lead(payload: LinkLeadApplication):
     }
 
 
-
-
-
-
+@router.post("/outbound/trigger-next-lead", status_code=status.HTTP_200_OK)
+@router.post("/outbound/trigger-next-lead/{campaign_id}", status_code=status.HTTP_200_OK)
+async def loan_agency_trigger_next_lead_endpoint(campaign_id: Optional[str] = None):
+    from .sarvam_router import trigger_next_lead
+    return await trigger_next_lead(campaign_id=campaign_id)

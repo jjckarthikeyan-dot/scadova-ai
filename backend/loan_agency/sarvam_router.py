@@ -765,4 +765,242 @@ async def get_cohort_status(cohort_id: str, campaign_id: Optional[str] = None):
     return response.json()
 
 
+@router.post("/outbound/trigger-next-lead", status_code=status.HTTP_200_OK)
+@router.post("/outbound/trigger-next-lead/{campaign_id}", status_code=status.HTTP_200_OK)
+async def trigger_next_lead(campaign_id: Optional[str] = None):
+    """
+    Auto-dialer trigger that selects the next lead based on priority:
+    1. callback: callback_required == True and callback_at <= now
+    2. reschedule: reschedule_required == True and reschedule_at <= now
+    3. retry: retry_required == True and next_retry_at <= now
+    4. followup: followup_required == True and next_followup_at <= now
+    5. new_lead: lead_status == 'new' and call_status == 'not_called'
+
+    Streams the selected lead to the Sarvam campaign cohort and marks the lead as 'queued'.
+    """
+    api_key = os.getenv("SARVAM_VOICE_AGENT_API_KEY") or os.getenv("SARVAM_API_KEY")
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="SARVAM_VOICE_AGENT_API_KEY is not configured"
+        )
+
+    target_campaign_id = campaign_id or os.getenv("SARVAM_CAMPAIGN_ID") or SARVAM_CAMPAIGN_ID
+    if not target_campaign_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No campaign_id provided and SARVAM_CAMPAIGN_ID is not configured"
+        )
+
+    now = datetime.now(timezone.utc)
+    now_iso = now.isoformat()
+
+    lead = None
+    selected_reason = None
+
+    # 1. CALLBACK CHECK
+    cb_res = (
+        supabase.table("loan_leads")
+        .select("*")
+        .eq("callback_required", True)
+        .neq("call_status", "queued")
+        .lte("callback_at", now_iso)
+        .order("callback_at")
+        .limit(1)
+        .execute()
+    )
+    if cb_res.data:
+        lead = cb_res.data[0]
+        selected_reason = "callback"
+
+    # 2. RESCHEDULE CHECK
+    if not lead:
+        rs_res = (
+            supabase.table("loan_leads")
+            .select("*")
+            .eq("reschedule_required", True)
+            .neq("call_status", "queued")
+            .lte("reschedule_at", now_iso)
+            .order("reschedule_at")
+            .limit(1)
+            .execute()
+        )
+        if rs_res.data:
+            lead = rs_res.data[0]
+            selected_reason = "reschedule"
+
+    # 3. RETRY CHECK
+    if not lead:
+        rt_res = (
+            supabase.table("loan_leads")
+            .select("*")
+            .eq("retry_required", True)
+            .neq("call_status", "queued")
+            .lte("next_retry_at", now_iso)
+            .order("next_retry_at")
+            .limit(1)
+            .execute()
+        )
+        if rt_res.data:
+            lead = rt_res.data[0]
+            selected_reason = "retry"
+
+    # 4. FOLLOW-UP CHECK
+    if not lead:
+        fu_res = (
+            supabase.table("loan_leads")
+            .select("*")
+            .eq("followup_required", True)
+            .neq("call_status", "queued")
+            .lte("next_followup_at", now_iso)
+            .order("next_followup_at")
+            .limit(1)
+            .execute()
+        )
+        if fu_res.data:
+            lead = fu_res.data[0]
+            selected_reason = "followup"
+
+    # 5. NEW LEAD CHECK
+    if not lead:
+        nl_res = (
+            supabase.table("loan_leads")
+            .select("*")
+            .eq("lead_status", "new")
+            .eq("call_status", "not_called")
+            .order("id")
+            .limit(1)
+            .execute()
+        )
+        if nl_res.data:
+            lead = nl_res.data[0]
+            selected_reason = "new_lead"
+
+    # 6. NO LEADS FOUND
+    if not lead:
+        return {
+            "success": True,
+            "message": "No eligible leads due for calling",
+            "lead_id": None,
+            "reason": None
+        }
+
+    phone = lead.get("phone_number")
+    if not phone:
+        return {
+            "success": False,
+            "message": f"Lead {lead.get('id')} has no valid phone number",
+            "lead_id": lead.get("id"),
+            "reason": selected_reason
+        }
+
+    # --------------------------------------------
+    # 7. BUILD SARVAM USER
+    # --------------------------------------------
+    app_variables = {
+        "lead_id": str(lead["id"]),
+        "full_name": lead.get("full_name") or "",
+        "phone_number": lead.get("phone_number") or "",
+        "city": lead.get("city") or "",
+        "preferred_language": lead.get("preferred_language") or "",
+        "lead_status": lead.get("lead_status") or "new"
+    }
+
+    user = {
+        "user_phone_number": phone,
+        "user_identifier": str(lead["id"]),
+        "app_variables": app_variables
+    }
+
+    if lead.get("preferred_language"):
+        user["app_overrides"] = {
+            "initial_language_name": lead["preferred_language"]
+        }
+
+    # --------------------------------------------
+    # 8. STREAM COHORT TO SARVAM
+    # --------------------------------------------
+    url = (
+        f"{SARVAM_BASE_URL}/scheduling/v1/"
+        f"orgs/{SARVAM_ORG_ID}/"
+        f"workspaces/{SARVAM_WORKSPACE_ID}/"
+        f"campaigns/{target_campaign_id}/cohorts/stream"
+    )
+
+    payload = {
+        "name": f"auto-lead-{lead['id']}",
+        "users": [user]
+    }
+
+    headers = {
+        "X-API-Key": api_key,
+        "Content-Type": "application/json"
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as http_client:
+            response = await http_client.post(
+                url,
+                json=payload,
+                headers=headers
+            )
+
+            # If 422 indicates variables not found in the agent, gracefully retry without unconfigured variable(s)
+            if response.status_code == 422 and "not found in the agent's variables:" in response.text:
+                logger.warning(f"Sarvam rejected app_variables: {response.text}. Retrying with supported variables.")
+                import re
+                m = re.search(r"not found in the agent's variables:\s*([^\"]+)", response.text)
+                if m:
+                    missing_vars = [v.strip() for v in m.group(1).split(",")]
+                    for u in payload["users"]:
+                        if "app_variables" in u:
+                            for mv in missing_vars:
+                                u["app_variables"].pop(mv, None)
+                    response = await http_client.post(
+                        url,
+                        json=payload,
+                        headers=headers
+                    )
+
+    except httpx.RequestError as req_err:
+        logger.error(f"SARVAM AUTO-LEAD REQUEST FAILED: {repr(req_err)}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Sarvam API communication failure: {str(req_err)}"
+        )
+
+    if response.is_error:
+        logger.error(f"SARVAM AUTO-LEAD ERROR [{response.status_code}]: {response.text}")
+        raise HTTPException(
+            status_code=response.status_code,
+            detail=response.text
+        )
+
+    sarvam_result = response.json()
+
+    # --------------------------------------------
+    # 10. MARK AS QUEUED
+    # --------------------------------------------
+    (
+        supabase.table("loan_leads")
+        .update({
+            "call_status": "queued",
+            "last_call_at": now.isoformat()
+        })
+        .eq("id", lead["id"])
+        .execute()
+    )
+
+    return {
+        "success": True,
+        "lead_id": lead["id"],
+        "full_name": lead.get("full_name"),
+        "phone_number": lead["phone_number"],
+        "reason": selected_reason,
+        "campaign_id": target_campaign_id,
+        "sarvam": sarvam_result
+    }
+
+
+
 

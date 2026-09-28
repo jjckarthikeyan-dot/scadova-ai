@@ -144,7 +144,8 @@ from backend.loan_agency.sarvam_router import (
     create_outbound_campaign,
     handle_campaign_webhook,
     stream_leads_to_campaign,
-    get_cohort_status
+    get_cohort_status,
+    trigger_next_lead
 )
 
 @app.post("/outbound/create-campaign", tags=["Sarvam AI"])
@@ -188,6 +189,18 @@ async def root_cohort_status_alias(
     campaign_id: Optional[str] = None
 ):
     return await get_cohort_status(cohort_id=cohort_id, campaign_id=campaign_id)
+
+
+@app.post("/outbound/trigger-next-lead", tags=["Sarvam AI"])
+@app.post("/outbound/trigger-next-lead/{campaign_id}", tags=["Sarvam AI"])
+@app.post("/api/loan-agency/outbound/trigger-next-lead", tags=["Loan Agency"])
+@app.post("/api/loan-agency/outbound/trigger-next-lead/{campaign_id}", tags=["Loan Agency"])
+@app.post("/api/loan-agency/sarvam/trigger-next-lead", tags=["Loan Agency"])
+@app.post("/api/loan-agency/sarvam/trigger-next-lead/{campaign_id}", tags=["Loan Agency"])
+async def root_trigger_next_lead_alias(
+    campaign_id: Optional[str] = None
+):
+    return await trigger_next_lead(campaign_id=campaign_id)
 
 
 

@@ -745,6 +745,65 @@ def test_create_loan_application_links_lead(mock_supabase):
     assert data["application_id"] == 42
 
 
+@patch("backend.loan_agency.sarvam_router.supabase")
+def test_trigger_next_lead_no_eligible(mock_supabase):
+    mock_query = MagicMock()
+    mock_query.select.return_value.eq.return_value.neq.return_value.lte.return_value.order.return_value.limit.return_value.execute.return_value.data = []
+    mock_query.select.return_value.eq.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value.data = []
+    mock_supabase.table.return_value = mock_query
+
+    with patch.dict("os.environ", {"SARVAM_VOICE_AGENT_API_KEY": "dummy_key", "SARVAM_CAMPAIGN_ID": "test_camp"}):
+        response = client.post("/outbound/trigger-next-lead")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["lead_id"] is None
+        assert "No eligible leads" in data["message"]
+
+
+@patch("httpx.AsyncClient.post")
+@patch("backend.loan_agency.sarvam_router.supabase")
+def test_trigger_next_lead_callback_priority(mock_supabase, mock_post):
+    mock_cb_query = MagicMock()
+    mock_cb_query.select.return_value.eq.return_value.neq.return_value.lte.return_value.order.return_value.limit.return_value.execute.return_value.data = [{
+        "id": 99,
+        "full_name": "Priority Customer",
+        "phone_number": "+919032008222",
+        "city": "Hyderabad",
+        "preferred_language": "Telugu",
+        "lead_status": "contacted"
+    }]
+    mock_cb_query.update.return_value.eq.return_value.execute.return_value.data = [{
+        "id": 99,
+        "call_status": "queued"
+    }]
+    mock_supabase.table.return_value = mock_cb_query
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.is_error = False
+    mock_resp.json.return_value = {"cohort_id": "auto_cohort_99", "status": "processing"}
+    mock_post.return_value = mock_resp
+
+    with patch.dict("os.environ", {"SARVAM_VOICE_AGENT_API_KEY": "dummy_key", "SARVAM_CAMPAIGN_ID": "test_camp"}):
+        response = client.post("/outbound/trigger-next-lead")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["lead_id"] == 99
+        assert data["reason"] == "callback"
+        assert data["full_name"] == "Priority Customer"
+        assert data["phone_number"] == "+919032008222"
+        assert data["campaign_id"] == "test_camp"
+        assert data["sarvam"]["cohort_id"] == "auto_cohort_99"
+
+        # Verify update to queued was called
+        mock_cb_query.update.assert_called()
+        update_args = mock_cb_query.update.call_args[0][0]
+        assert update_args["call_status"] == "queued"
+        assert "last_call_at" in update_args
+
+
 
 
 
