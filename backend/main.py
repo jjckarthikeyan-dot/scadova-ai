@@ -117,7 +117,8 @@ async def root_get_lead_context(phone_number: str):
 
 from backend.loan_agency.sarvam_router import (
     create_outbound_campaign,
-    handle_campaign_webhook
+    handle_campaign_webhook,
+    stream_leads_to_campaign
 )
 
 @app.post("/outbound/create-campaign", tags=["Sarvam AI"])
@@ -129,6 +130,20 @@ async def root_create_outbound_campaign():
 @app.post("/api/loan-agency/sarvam/campaign-webhook", tags=["Loan Agency"])
 async def root_campaign_webhook(payload: dict):
     return await handle_campaign_webhook(payload)
+
+@app.post("/outbound/stream-leads/{campaign_id}", tags=["Sarvam AI"])
+@app.post("/api/loan-agency/outbound/stream-leads/{campaign_id}", tags=["Loan Agency"])
+@app.post("/api/loan-agency/sarvam/stream-leads/{campaign_id}", tags=["Loan Agency"])
+async def root_stream_leads_alias(
+    campaign_id: str,
+    limit: int = 10,
+    phone_number: str = None
+):
+    return await stream_leads_to_campaign(
+        campaign_id=campaign_id,
+        limit=limit,
+        phone_number=phone_number
+    )
 
 
 

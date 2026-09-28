@@ -435,3 +435,158 @@ async def handle_campaign_webhook(payload: Dict[str, Any]):
             detail=str(e)
         )
 
+
+@router.post("/outbound/stream-leads/{campaign_id}", status_code=status.HTTP_200_OK)
+async def stream_leads_to_campaign(
+    campaign_id: str,
+    limit: int = 10,
+    phone_number: Optional[str] = None
+):
+    """
+    Take eligible leads from loan_leads and stream them into the specified Sarvam campaign cohort.
+    Doc: POST https://apps.sarvam.ai/api/scheduling/v1/orgs/{org_id}/workspaces/{workspace_id}/campaigns/{campaign_id}/cohorts/stream
+    """
+    api_key = os.getenv("SARVAM_VOICE_AGENT_API_KEY") or os.getenv("SARVAM_API_KEY")
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="SARVAM_VOICE_AGENT_API_KEY is not configured"
+        )
+
+    # -------------------------------------------------
+    # 1. FETCH ELIGIBLE LEADS
+    # -------------------------------------------------
+    if phone_number:
+        normalized = phone_number.strip().replace(" ", "").replace("-", "")
+        if normalized.startswith("91") and not normalized.startswith("+91"):
+            normalized = f"+{normalized}"
+        elif len(normalized) == 10 and normalized.isdigit():
+            normalized = f"+91{normalized}"
+
+        leads_result = (
+            supabase.table("loan_leads")
+            .select("*")
+            .eq("phone_number", normalized)
+            .limit(limit)
+            .execute()
+        )
+    else:
+        leads_result = (
+            supabase.table("loan_leads")
+            .select("*")
+            .eq("lead_status", "new")
+            .eq("call_status", "not_called")
+            .order("id")
+            .limit(limit)
+            .execute()
+        )
+
+    leads = leads_result.data or []
+    if not leads:
+        return {
+            "success": True,
+            "message": "No eligible leads found",
+            "count": 0
+        }
+
+    # -------------------------------------------------
+    # 2. BUILD SARVAM USERS
+    # -------------------------------------------------
+    users = []
+    for lead in leads:
+        phone = lead.get("phone_number")
+        if not phone:
+            continue
+
+        app_variables = {
+            "lead_id": str(lead["id"]),
+            "full_name": lead.get("full_name") or "",
+            "city": lead.get("city") or "",
+            "preferred_language": lead.get("preferred_language") or ""
+        }
+
+        user_entry = {
+            "user_phone_number": phone,
+            "user_identifier": str(lead["id"]),
+            "app_variables": app_variables
+        }
+
+        # If preferred_language is set, send initial_language_name override
+        # If null/empty, intentionally omit so normal greeting can run
+        if lead.get("preferred_language"):
+            user_entry["app_overrides"] = {
+                "initial_language_name": lead["preferred_language"]
+            }
+
+        users.append(user_entry)
+
+    if not users:
+        return {
+            "success": True,
+            "message": "No valid phone numbers found for eligible leads",
+            "count": 0
+        }
+
+    # -------------------------------------------------
+    # 3. STREAM COHORT TO SARVAM
+    # -------------------------------------------------
+    cohort_name = f"cohort_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+    url = (
+        f"{SARVAM_BASE_URL}/scheduling/v1/"
+        f"orgs/{SARVAM_ORG_ID}/"
+        f"workspaces/{SARVAM_WORKSPACE_ID}/"
+        f"campaigns/{campaign_id}/cohorts/stream"
+    )
+
+    headers = {
+        "X-API-Key": api_key,
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "name": cohort_name[:50],
+        "users": users
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as http_client:
+            response = await http_client.post(
+                url,
+                json=payload,
+                headers=headers
+            )
+
+            # If 422 indicates variables not found in the agent, gracefully retry without unconfigured variable(s)
+            if response.status_code == 422 and "not found in the agent's variables:" in response.text:
+                logger.warning(f"Sarvam rejected app_variables: {response.text}. Retrying with supported variables.")
+                import re
+                m = re.search(r"not found in the agent's variables:\s*([^\"]+)", response.text)
+                if m:
+                    missing_vars = [v.strip() for v in m.group(1).split(",")]
+                    for u in payload["users"]:
+                        if "app_variables" in u:
+                            for mv in missing_vars:
+                                u["app_variables"].pop(mv, None)
+                    response = await http_client.post(
+                        url,
+                        json=payload,
+                        headers=headers
+                    )
+
+    except httpx.RequestError as req_err:
+        logger.error(f"SARVAM STREAM COHORT REQUEST FAILED: {repr(req_err)}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Sarvam API communication failure: {str(req_err)}"
+        )
+
+    if response.is_error:
+        logger.error(f"SARVAM STREAM COHORT ERROR [{response.status_code}]: {response.text}")
+        raise HTTPException(
+            status_code=response.status_code,
+            detail=response.text
+        )
+
+    return response.json()
+
+

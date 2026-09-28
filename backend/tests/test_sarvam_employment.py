@@ -564,6 +564,81 @@ def test_handle_campaign_webhook(mock_supabase):
     assert data["direction"] == "outbound_campaign"
 
 
+@patch("backend.loan_agency.sarvam_router.supabase")
+def test_stream_leads_no_eligible_leads(mock_supabase):
+    mock_query = MagicMock()
+    mock_query.select.return_value.eq.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value.data = []
+    mock_supabase.table.return_value = mock_query
+
+    with patch.dict("os.environ", {"SARVAM_VOICE_AGENT_API_KEY": "dummy_key"}):
+        response = client.post("/api/loan-agency/outbound/stream-leads/test_campaign_123?limit=5")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["count"] == 0
+        assert "No eligible leads found" in data["message"]
+
+
+@patch("httpx.AsyncClient.post")
+@patch("backend.loan_agency.sarvam_router.supabase")
+def test_stream_leads_success_with_overrides(mock_supabase, mock_post):
+    mock_query = MagicMock()
+    mock_query.select.return_value.eq.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value.data = [
+        {
+            "id": 2,
+            "full_name": "Karthikeyan",
+            "phone_number": "+919032008222",
+            "city": "Hyderabad",
+            "preferred_language": "Telugu",
+            "lead_status": "new",
+            "call_status": "not_called"
+        },
+        {
+            "id": 3,
+            "full_name": "Rahul Sharma",
+            "phone_number": "+919876543210",
+            "city": "Delhi",
+            "preferred_language": None,
+            "lead_status": "new",
+            "call_status": "not_called"
+        }
+    ]
+    mock_supabase.table.return_value = mock_query
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.is_error = False
+    mock_resp.json.return_value = {
+        "status": "processing",
+        "cohort_id": "cohort_test_abc123"
+    }
+    mock_post.return_value = mock_resp
+
+    with patch.dict("os.environ", {"SARVAM_VOICE_AGENT_API_KEY": "dummy_key"}):
+        response = client.post("/api/loan-agency/outbound/stream-leads/test_campaign_123?limit=2")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "processing"
+        assert data["cohort_id"] == "cohort_test_abc123"
+
+        args, kwargs = mock_post.call_args
+        posted_users = kwargs["json"]["users"]
+        assert len(posted_users) == 2
+
+        # User 1 has preferred_language -> app_overrides present
+        assert posted_users[0]["user_phone_number"] == "+919032008222"
+        assert posted_users[0]["user_identifier"] == "2"
+        assert posted_users[0]["app_variables"]["lead_id"] == "2"
+        assert posted_users[0]["app_variables"]["full_name"] == "Karthikeyan"
+        assert posted_users[0]["app_variables"]["preferred_language"] == "Telugu"
+        assert posted_users[0]["app_overrides"]["initial_language_name"] == "Telugu"
+
+        # User 2 has no preferred_language -> app_overrides omitted
+        assert posted_users[1]["user_phone_number"] == "+919876543210"
+        assert "app_overrides" not in posted_users[1]
+
+
+
 
 
 
