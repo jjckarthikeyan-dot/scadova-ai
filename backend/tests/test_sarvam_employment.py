@@ -516,5 +516,50 @@ def test_get_lead_context_not_found(mock_supabase):
     assert data["phone_number"] == "+919999999998"
 
 
+def test_create_outbound_campaign_missing_key():
+    with patch.dict("os.environ", {}, clear=True):
+        response = client.post("/outbound/create-campaign")
+        assert response.status_code == 500
+        assert "SARVAM_VOICE_AGENT_API_KEY is not configured" in response.json()["detail"]
+
+
+@patch("backend.loan_agency.sarvam_router.requests.post")
+def test_create_outbound_campaign_success(mock_post):
+    mock_resp = MagicMock()
+    mock_resp.ok = True
+    mock_resp.json.return_value = {
+        "campaign_id": "test_camp_001",
+        "status": "scheduled"
+    }
+    mock_post.return_value = mock_resp
+
+    with patch.dict("os.environ", {"SARVAM_VOICE_AGENT_API_KEY": "dummy_key"}):
+        response = client.post("/outbound/create-campaign")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["campaign_id"] == "test_camp_001"
+
+        # Verify posted payload
+        args, kwargs = mock_post.call_args
+        assert kwargs["json"]["app_config"]["app_id"] == "MKN-Financi-3af4be5e-3450"
+        assert kwargs["json"]["app_config"]["connection_configs"][0]["connection_id"] == "1fccc720-e6-bfd93aa8-45de"
+
+
+@patch("backend.loan_agency.sarvam_router.supabase")
+def test_handle_campaign_webhook(mock_supabase):
+    mock_table = MagicMock()
+    mock_supabase.table.return_value = mock_table
+
+    response = client.post(
+        "/api/loan-agency/sarvam/campaign-webhook",
+        json={"event": "call_completed", "phone_number": "+919032008222"}
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "received"
+    assert data["direction"] == "outbound_campaign"
+
+
+
 
 

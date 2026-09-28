@@ -1,5 +1,8 @@
 import logging
-from typing import Any, Dict
+import os
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, Optional
+import requests
 from fastapi import APIRouter, HTTPException, status
 from backend.core.supabase import supabase
 from .sarvam_client import sarvam_client
@@ -232,3 +235,203 @@ async def handle_outbound_webhook(payload: Dict[str, Any]):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
         )
+
+
+# ============================================================
+# SARVAM OUTBOUND CAMPAIGN SCHEDULING (PHASE 2.2 / STEP 1)
+# ============================================================
+
+SARVAM_BASE_URL = "https://apps.sarvam.ai/api"
+SARVAM_ORG_ID = "019fea16-96c0-705a-88f5-819f95459cc4"
+SARVAM_WORKSPACE_ID = "019fea16-96c4-78cd-975e-ee5c73089f99"
+
+SARVAM_APP_ID = "MKN-Financi-3af4be5e-3450"
+SARVAM_APP_VERSION = 6
+
+SARVAM_CONNECTION_ID = "1fccc720-e6-bfd93aa8-45de"
+SARVAM_OUTBOUND_NUMBER = "+918071582250"
+
+
+@router.post("/outbound/create-campaign", status_code=status.HTTP_200_OK)
+async def create_outbound_campaign():
+    """
+    Step 1: Create an outbound calling campaign in Sarvam AI for MKN loan leads.
+    Configures app_id, connection_id, retry policy, allowed calling windows, and status webhooks.
+    """
+    api_key = os.getenv("SARVAM_VOICE_AGENT_API_KEY") or os.getenv("SARVAM_API_KEY")
+
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="SARVAM_VOICE_AGENT_API_KEY is not configured"
+        )
+
+    now = datetime.now(timezone.utc)
+
+    # Temporary test campaign window
+    start_time = now + timedelta(minutes=2)
+    end_time = now + timedelta(days=1)
+
+    url = (
+        f"{SARVAM_BASE_URL}/scheduling/v1/"
+        f"orgs/{SARVAM_ORG_ID}/"
+        f"workspaces/{SARVAM_WORKSPACE_ID}/campaigns"
+    )
+
+    payload = {
+        "name": "MKN Loan Leads Outbound",
+        "description": "Outbound calls for MKN loan leads",
+
+        "app_config": {
+            "app_id": SARVAM_APP_ID,
+            "app_type": "agent",
+            "app_version": SARVAM_APP_VERSION,
+
+            # Start low while testing
+            "attempts_per_second": 1,
+
+            "connection_configs": [
+                {
+                    "connection_id": SARVAM_CONNECTION_ID,
+                    "phone_numbers": [
+                        SARVAM_OUTBOUND_NUMBER
+                    ],
+                    "weight": 1
+                }
+            ],
+
+            "retry_config": {
+                "max_retries": 1,
+                "retry_interval_minutes": 5,
+
+                "retry_on": {
+                    "busy": {
+                        "enabled": True
+                    },
+                    "no_answer": {
+                        "enabled": True
+                    },
+                    "short_duration": {
+                        "enabled": True,
+                        "threshold_seconds": 30
+                    }
+                }
+            },
+
+            "webhook_config": {
+                "metadata": {
+                    "source": "mkn_loan_leads"
+                },
+                "url": (
+                    "https://scadova-ai.onrender.com/"
+                    "api/loan-agency/sarvam/campaign-webhook"
+                )
+            }
+        },
+
+        "start_timestamp": start_time.isoformat(),
+        "end_timestamp": end_time.isoformat(),
+
+        "allowed_schedule": {
+            "allowed_start_time": "09:00",
+            "allowed_end_time": "20:00",
+
+            "allowed_days": [
+                "Monday",
+                "Tuesday",
+                "Wednesday",
+                "Thursday",
+                "Friday",
+                "Saturday"
+            ],
+
+            "timezone": "Asia/Kolkata"
+        }
+    }
+
+    headers = {
+        "X-API-Key": api_key,
+        "Content-Type": "application/json"
+    }
+
+    try:
+        response = requests.post(
+            url,
+            json=payload,
+            headers=headers,
+            timeout=30
+        )
+    except requests.exceptions.RequestException as req_err:
+        logger.error(f"SARVAM CAMPAIGN REQUEST FAILED: {repr(req_err)}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Sarvam API communication failure: {str(req_err)}"
+        )
+
+    if not response.ok:
+        logger.error(f"SARVAM CAMPAIGN ERROR [{response.status_code}]: {response.text}")
+        raise HTTPException(
+            status_code=response.status_code,
+            detail=response.text
+        )
+
+    return response.json()
+
+
+@router.post("/campaign-webhook", status_code=status.HTTP_200_OK)
+@router.post("/sarvam/campaign-webhook", status_code=status.HTTP_200_OK)
+async def handle_campaign_webhook(payload: Dict[str, Any]):
+    """
+    Webhook handler for Sarvam outbound campaign call updates.
+    Logs payload to sarvam_webhooks and updates call_sessions and loan_leads if matching phone exists.
+    """
+    try:
+        event = payload.get("event") or payload.get("status") or "campaign_event"
+        call_id = payload.get("call_id") or payload.get("sarvam_call_id")
+        phone_number = payload.get("phone_number") or payload.get("target_number")
+
+        try:
+            supabase.table("sarvam_webhooks").insert({
+                "event_type": str(event),
+                "direction": "outbound_campaign",
+                "payload": payload
+            }).execute()
+        except Exception as db_err:
+            logger.warning(f"Could not log campaign webhook to DB: {db_err}")
+
+        # Update loan_leads if phone is present
+        if phone_number:
+            normalized = phone_number.strip().replace(" ", "").replace("-", "")
+            if normalized.startswith("91") and not normalized.startswith("+91"):
+                normalized = f"+{normalized}"
+            elif len(normalized) == 10 and normalized.isdigit():
+                normalized = f"+91{normalized}"
+
+            try:
+                update_lead = {
+                    "last_call_at": datetime.now(timezone.utc).isoformat(),
+                    "last_call_status": event,
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                }
+                if event in ["completed", "call_completed"]:
+                    update_lead["call_status"] = "called"
+                elif event in ["busy", "no_answer"]:
+                    update_lead["retry_required"] = True
+
+                supabase.table("loan_leads").update(update_lead).eq("phone_number", normalized).execute()
+            except Exception as lead_err:
+                logger.warning(f"Could not update lead from campaign webhook: {lead_err}")
+
+        return {
+            "status": "received",
+            "direction": "outbound_campaign",
+            "event": event,
+            "call_id": call_id
+        }
+    except Exception as e:
+        logger.error(f"CAMPAIGN WEBHOOK ERROR: {repr(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+

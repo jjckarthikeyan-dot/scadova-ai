@@ -115,6 +115,22 @@ async def root_get_lead_by_phone(phone_number: str):
 async def root_get_lead_context(phone_number: str):
     return await get_lead_context(phone_number)
 
+from backend.loan_agency.sarvam_router import (
+    create_outbound_campaign,
+    handle_campaign_webhook
+)
+
+@app.post("/outbound/create-campaign", tags=["Sarvam AI"])
+@app.post("/api/loan-agency/outbound/create-campaign", tags=["Loan Agency"])
+@app.post("/api/loan-agency/sarvam/create-campaign", tags=["Loan Agency"])
+async def root_create_outbound_campaign():
+    return await create_outbound_campaign()
+
+@app.post("/api/loan-agency/sarvam/campaign-webhook", tags=["Loan Agency"])
+async def root_campaign_webhook(payload: dict):
+    return await handle_campaign_webhook(payload)
+
+
 
 # Service & Appointment Booking router
 app.include_router(appointment_booking_router)
