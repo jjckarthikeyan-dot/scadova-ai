@@ -657,12 +657,10 @@ async def stream_leads_to_campaign(
             continue
 
         app_variables = {
-            "lead_id": str(lead["id"]),
             "full_name": lead.get("full_name") or "",
-            "phone_number": lead.get("phone_number") or "",
             "city": lead.get("city") or "",
             "preferred_language": lead.get("preferred_language") or "",
-            "lead_status": lead.get("lead_status") or "new"
+            "lead_status": lead.get("lead_status") or ""
         }
 
 
@@ -944,12 +942,10 @@ async def run_outbound_dispatch(campaign_id: Optional[str] = None):
     # 7. BUILD SARVAM USER
     # --------------------------------------------
     app_variables = {
-        "lead_id": str(lead["id"]),
         "full_name": lead.get("full_name") or "",
-        "phone_number": lead.get("phone_number") or "",
         "city": lead.get("city") or "",
         "preferred_language": lead.get("preferred_language") or "",
-        "lead_status": lead.get("lead_status") or "new"
+        "lead_status": lead.get("lead_status") or ""
     }
 
     user = {

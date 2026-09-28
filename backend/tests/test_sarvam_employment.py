@@ -636,9 +636,9 @@ def test_stream_leads_success_with_overrides(mock_supabase, mock_post):
         # User 1 has preferred_language -> app_overrides present
         assert posted_users[0]["user_phone_number"] == "+919032008222"
         assert posted_users[0]["user_identifier"] == "2"
-        assert posted_users[0]["app_variables"]["lead_id"] == "2"
+        assert "lead_id" not in posted_users[0]["app_variables"]
+        assert "phone_number" not in posted_users[0]["app_variables"]
         assert posted_users[0]["app_variables"]["full_name"] == "Karthikeyan"
-        assert posted_users[0]["app_variables"]["phone_number"] == "+919032008222"
         assert posted_users[0]["app_variables"]["city"] == "Hyderabad"
         assert posted_users[0]["app_variables"]["preferred_language"] == "Telugu"
         assert posted_users[0]["app_variables"]["lead_status"] == "new"

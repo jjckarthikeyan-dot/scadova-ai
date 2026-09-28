@@ -144,12 +144,10 @@ async def dispatch_lead_call(
     now = datetime.now(timezone.utc)
 
     app_variables = {
-        "lead_id": str(lead["id"]),
         "full_name": lead.get("full_name") or "",
-        "phone_number": lead.get("phone_number") or "",
         "city": lead.get("city") or "",
         "preferred_language": lead.get("preferred_language") or "",
-        "lead_status": lead.get("lead_status") or "new"
+        "lead_status": lead.get("lead_status") or ""
     }
 
     user = {
