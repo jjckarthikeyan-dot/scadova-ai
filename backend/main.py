@@ -42,15 +42,25 @@ from backend.loan_agency.router import (
 )
 
 
-
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from backend.loan_agency.dispatcher import followup_dispatcher
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Automatically start background dispatcher if enabled and not in testing
+    if "pytest" not in sys.modules and os.getenv("ENABLE_AUTO_DISPATCHER", "true").lower() in ("true", "1", "yes"):
+        await followup_dispatcher.start()
+    yield
+    await followup_dispatcher.stop()
 
 app = FastAPI(
     title="Scadova AI Backend",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 app.add_middleware(
@@ -201,6 +211,33 @@ async def root_trigger_next_lead_alias(
     campaign_id: Optional[str] = None
 ):
     return await trigger_next_lead(campaign_id=campaign_id)
+
+
+@app.get("/outbound/dispatcher/status", tags=["Sarvam AI"])
+@app.get("/api/loan-agency/outbound/dispatcher/status", tags=["Loan Agency"])
+async def root_dispatcher_status_alias():
+    return followup_dispatcher.status()
+
+
+@app.post("/outbound/dispatcher/run-once", tags=["Sarvam AI"])
+@app.post("/api/loan-agency/outbound/dispatcher/run-once", tags=["Loan Agency"])
+async def root_dispatcher_run_once_alias(campaign_id: Optional[str] = None):
+    return await followup_dispatcher.run_cycle(campaign_id=campaign_id)
+
+
+@app.post("/outbound/dispatcher/start", tags=["Sarvam AI"])
+@app.post("/api/loan-agency/outbound/dispatcher/start", tags=["Loan Agency"])
+async def root_dispatcher_start_alias():
+    await followup_dispatcher.start()
+    return {"success": True, "message": "Automatic followup dispatcher started", "status": followup_dispatcher.status()}
+
+
+@app.post("/outbound/dispatcher/stop", tags=["Sarvam AI"])
+@app.post("/api/loan-agency/outbound/dispatcher/stop", tags=["Loan Agency"])
+async def root_dispatcher_stop_alias():
+    await followup_dispatcher.stop()
+    return {"success": True, "message": "Automatic followup dispatcher stopped", "status": followup_dispatcher.status()}
+
 
 
 

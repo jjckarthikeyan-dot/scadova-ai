@@ -27,6 +27,16 @@ from .router import (
     create_loan_application
 )
 
+from .dispatcher import (
+    process_post_call_followup,
+    dispatch_lead_call,
+    dispatch_due_followup_leads,
+    followup_dispatcher,
+    MAX_ATTEMPTS,
+    TEST_FOLLOWUP_MINUTES,
+    DISPATCHER_INTERVAL_SECONDS
+)
+
 
 logger = logging.getLogger("sarvam_router")
 
@@ -507,8 +517,43 @@ async def handle_campaign_webhook(payload: Dict[str, Any]):
                 update_data["call_success"] = True
                 update_data["retry_required"] = False
                 update_data["next_retry_at"] = None
-            elif completion_status in ["partial", "failed"]:
-                update_data["call_success"] = False
+            # Check existing lead status and handle post-call follow-up
+            lead = None
+            try:
+                lead_res = (
+                    supabase.table("loan_leads")
+                    .select("*")
+                    .eq("phone_number", normalized)
+                    .limit(1)
+                    .execute()
+                )
+                if (
+                    lead_res
+                    and isinstance(lead_res.data, list)
+                    and len(lead_res.data) > 0
+                    and isinstance(lead_res.data[0], dict)
+                ):
+                    lead = lead_res.data[0]
+            except Exception as lead_err:
+                logger.warning(f"Could not fetch lead by phone {normalized}: {lead_err}")
+
+            # After each call, if the application is still incomplete:
+            if lead:
+                is_completed = (
+                    lead.get("application_completed") is True
+                    or lead.get("lead_status") == "application_completed"
+                    or payload.get("application_completed") is True
+                )
+                if not is_completed:
+                    followup_update = process_post_call_followup(lead)
+                    update_data.update(followup_update)
+                elif completion_status == "completed":
+                    update_data["lead_status"] = "application_completed"
+                    update_data["call_status"] = "completed"
+                    update_data["application_completed"] = True
+                    update_data["followup_required"] = False
+                    update_data["next_followup_at"] = None
+                    update_data["lead_success"] = True
 
             try:
                 res = (
@@ -854,12 +899,15 @@ async def trigger_next_lead(campaign_id: Optional[str] = None):
             .neq("call_status", "queued")
             .lte("next_followup_at", now_iso)
             .order("next_followup_at")
-            .limit(1)
+            .limit(10)
             .execute()
         )
         if fu_res.data:
-            lead = fu_res.data[0]
-            selected_reason = "followup"
+            for item in fu_res.data:
+                if (item.get("retry_count") or 0) < 3:
+                    lead = item
+                    selected_reason = "followup"
+                    break
 
     # 5. NEW LEAD CHECK
     if not lead:
@@ -1000,6 +1048,119 @@ async def trigger_next_lead(campaign_id: Optional[str] = None):
         "campaign_id": target_campaign_id,
         "sarvam": sarvam_result
     }
+
+
+# ============================================================
+# POST-CALL PROCESSING & AUTOMATIC DISPATCHER ENDPOINTS
+# ============================================================
+
+@router.post("/outbound/post-call-process", status_code=status.HTTP_200_OK)
+@router.post("/sarvam/outbound/post-call-process", status_code=status.HTTP_200_OK)
+async def post_call_process_endpoint(payload: Dict[str, Any]):
+    """
+    Evaluates follow-up status after a call session and records attempt.
+    """
+    lead_id = payload.get("lead_id")
+    phone_number = payload.get("phone_number")
+    lead = payload.get("lead")
+
+    if not lead:
+        query = supabase.table("loan_leads").select("*")
+        if lead_id:
+            res = query.eq("id", lead_id).limit(1).execute()
+        elif phone_number:
+            res = query.eq("phone_number", phone_number).limit(1).execute()
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Either lead_id, phone_number, or lead object is required"
+            )
+        if not res.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Lead not found"
+            )
+        lead = res.data[0]
+
+    is_completed = (
+        lead.get("application_completed") is True
+        or lead.get("lead_status") == "application_completed"
+        or payload.get("application_completed") is True
+    )
+
+    if is_completed:
+        update_data = {
+            "lead_status": "application_completed",
+            "call_status": "completed",
+            "application_completed": True,
+            "followup_required": False,
+            "next_followup_at": None,
+            "lead_success": True
+        }
+    else:
+        update_data = process_post_call_followup(lead)
+
+    update_res = supabase.table("loan_leads").update(update_data).eq("id", lead["id"]).execute()
+    updated_lead = update_res.data[0] if update_res.data else lead
+
+    return {
+        "success": True,
+        "lead_id": lead["id"],
+        "is_application_completed": is_completed,
+        "update_data": update_data,
+        "lead": updated_lead
+    }
+
+
+@router.get("/outbound/dispatcher/status", status_code=status.HTTP_200_OK)
+@router.get("/sarvam/outbound/dispatcher/status", status_code=status.HTTP_200_OK)
+async def get_dispatcher_status():
+    """
+    Returns the current running status and telemetry of the automatic dispatcher.
+    """
+    return followup_dispatcher.status()
+
+
+@router.post("/outbound/dispatcher/run-once", status_code=status.HTTP_200_OK)
+@router.post("/sarvam/outbound/dispatcher/run-once", status_code=status.HTTP_200_OK)
+async def run_dispatcher_once(campaign_id: Optional[str] = None):
+    """
+    Triggers an immediate single execution cycle of the automatic dispatcher.
+    Dispatches calls only if:
+      followup_required = true
+      AND next_followup_at <= NOW()
+      AND retry_count < 3
+    """
+    return await followup_dispatcher.run_cycle(campaign_id=campaign_id)
+
+
+@router.post("/outbound/dispatcher/start", status_code=status.HTTP_200_OK)
+@router.post("/sarvam/outbound/dispatcher/start", status_code=status.HTTP_200_OK)
+async def start_dispatcher():
+    """
+    Starts the automatic dispatcher background loop.
+    """
+    await followup_dispatcher.start()
+    return {
+        "success": True,
+        "message": "Automatic followup dispatcher started",
+        "status": followup_dispatcher.status()
+    }
+
+
+@router.post("/outbound/dispatcher/stop", status_code=status.HTTP_200_OK)
+@router.post("/sarvam/outbound/dispatcher/stop", status_code=status.HTTP_200_OK)
+async def stop_dispatcher():
+    """
+    Stops the automatic dispatcher background loop.
+    """
+    await followup_dispatcher.stop()
+    return {
+        "success": True,
+        "message": "Automatic followup dispatcher stopped",
+        "status": followup_dispatcher.status()
+    }
+
 
 
 
