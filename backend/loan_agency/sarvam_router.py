@@ -2,7 +2,7 @@ import logging
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
-import requests
+import httpx
 from fastapi import APIRouter, HTTPException, status
 from backend.core.supabase import supabase
 from .sarvam_client import sarvam_client
@@ -355,20 +355,20 @@ async def create_outbound_campaign():
     }
 
     try:
-        response = requests.post(
-            url,
-            json=payload,
-            headers=headers,
-            timeout=30
-        )
-    except requests.exceptions.RequestException as req_err:
+        async with httpx.AsyncClient(timeout=30.0) as http_client:
+            response = await http_client.post(
+                url,
+                json=payload,
+                headers=headers
+            )
+    except httpx.RequestError as req_err:
         logger.error(f"SARVAM CAMPAIGN REQUEST FAILED: {repr(req_err)}")
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Sarvam API communication failure: {str(req_err)}"
         )
 
-    if not response.ok:
+    if response.is_error:
         logger.error(f"SARVAM CAMPAIGN ERROR [{response.status_code}]: {response.text}")
         raise HTTPException(
             status_code=response.status_code,

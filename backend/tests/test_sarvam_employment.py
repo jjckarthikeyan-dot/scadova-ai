@@ -523,15 +523,19 @@ def test_create_outbound_campaign_missing_key():
         assert "SARVAM_VOICE_AGENT_API_KEY is not configured" in response.json()["detail"]
 
 
-@patch("backend.loan_agency.sarvam_router.requests.post")
+@patch("httpx.AsyncClient.post")
 def test_create_outbound_campaign_success(mock_post):
     mock_resp = MagicMock()
-    mock_resp.ok = True
+    mock_resp.is_error = False
     mock_resp.json.return_value = {
         "campaign_id": "test_camp_001",
         "status": "scheduled"
     }
-    mock_post.return_value = mock_resp
+
+    async def async_post(*args, **kwargs):
+        return mock_resp
+
+    mock_post.side_effect = async_post
 
     with patch.dict("os.environ", {"SARVAM_VOICE_AGENT_API_KEY": "dummy_key"}):
         response = client.post("/outbound/create-campaign")
