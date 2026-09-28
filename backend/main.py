@@ -127,9 +127,11 @@ from backend.loan_agency.sarvam_router import (
 async def root_create_outbound_campaign():
     return await create_outbound_campaign()
 
+@app.post("/sarvam/campaign-webhook", tags=["Loan Agency"])
 @app.post("/api/loan-agency/sarvam/campaign-webhook", tags=["Loan Agency"])
 async def root_campaign_webhook(payload: dict):
     return await handle_campaign_webhook(payload)
+
 
 @app.post("/outbound/stream-leads/{campaign_id}", tags=["Sarvam AI"])
 @app.post("/api/loan-agency/outbound/stream-leads/{campaign_id}", tags=["Loan Agency"])

@@ -2178,4 +2178,11 @@ async def loan_agency_stream_leads_endpoint(
     )
 
 
+@router.post("/sarvam/campaign-webhook", status_code=status.HTTP_200_OK)
+async def loan_agency_campaign_webhook_endpoint(payload: Dict[str, Any]):
+    from .sarvam_router import handle_campaign_webhook
+    return await handle_campaign_webhook(payload)
+
+
+
 

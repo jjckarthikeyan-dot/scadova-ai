@@ -383,50 +383,138 @@ async def create_outbound_campaign():
 async def handle_campaign_webhook(payload: Dict[str, Any]):
     """
     Webhook handler for Sarvam outbound campaign call updates.
-    Logs payload to sarvam_webhooks and updates call_sessions and loan_leads if matching phone exists.
+    Updates call_status, last_call_status, last_call_end_reason, last_call_at,
+    retry_required, retry_count, next_retry_at, call_success in loan_leads.
     """
     try:
-        event = payload.get("event") or payload.get("status") or "campaign_event"
         call_id = payload.get("call_id") or payload.get("sarvam_call_id")
-        phone_number = payload.get("phone_number") or payload.get("target_number")
+        phone_number = (
+            payload.get("phone_number")
+            or payload.get("target_number")
+            or payload.get("user_phone_number")
+            or (payload.get("user") or {}).get("user_phone_number")
+            or (payload.get("data") or {}).get("phone_number")
+        )
 
+        connectivity_status = (
+            payload.get("connectivity_status")
+            or payload.get("call_status")
+            or payload.get("status")
+            or payload.get("event")
+        )
+        completion_status = payload.get("completion_status")
+        retry_attempt = payload.get("retry_attempt", 0)
+        end_reason = (
+            payload.get("end_reason")
+            or payload.get("disconnect_reason")
+            or payload.get("last_call_end_reason")
+        )
+
+        # Log payload to sarvam_webhooks
         try:
             supabase.table("sarvam_webhooks").insert({
-                "event_type": str(event),
+                "event_type": str(connectivity_status or completion_status or "campaign_event"),
                 "direction": "outbound_campaign",
                 "payload": payload
             }).execute()
         except Exception as db_err:
             logger.warning(f"Could not log campaign webhook to DB: {db_err}")
 
-        # Update loan_leads if phone is present
+        # Update call_sessions if call_id exists
+        if call_id:
+            try:
+                update_session = {}
+                if connectivity_status:
+                    update_session["status"] = connectivity_status
+                if "duration" in payload:
+                    update_session["duration_seconds"] = payload["duration"]
+                if "transcript" in payload:
+                    update_session["transcript"] = payload["transcript"]
+                if "recording_url" in payload:
+                    update_session["recording_url"] = payload["recording_url"]
+                if update_session:
+                    supabase.table("call_sessions").update(update_session).eq("sarvam_call_id", call_id).execute()
+            except Exception as update_err:
+                logger.warning(f"Could not update call_session: {update_err}")
+
+        updated_lead = None
+        normalized = None
+        update_data = {}
+
         if phone_number:
-            normalized = phone_number.strip().replace(" ", "").replace("-", "")
+            normalized = (
+                str(phone_number)
+                .strip()
+                .replace(" ", "")
+                .replace("-", "")
+            )
             if normalized.startswith("91") and not normalized.startswith("+91"):
                 normalized = f"+{normalized}"
             elif len(normalized) == 10 and normalized.isdigit():
                 normalized = f"+91{normalized}"
 
-            try:
-                update_lead = {
-                    "last_call_at": datetime.now(timezone.utc).isoformat(),
-                    "last_call_status": event,
-                    "updated_at": datetime.now(timezone.utc).isoformat()
-                }
-                if event in ["completed", "call_completed"]:
-                    update_lead["call_status"] = "called"
-                elif event in ["busy", "no_answer"]:
-                    update_lead["retry_required"] = True
+            update_data = {
+                "last_call_at": datetime.now(timezone.utc).isoformat(),
+                "last_call_status": connectivity_status,
+                "retry_count": retry_attempt,
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }
+            if end_reason:
+                update_data["last_call_end_reason"] = end_reason
 
-                supabase.table("loan_leads").update(update_lead).eq("phone_number", normalized).execute()
+            # Connected successfully
+            if connectivity_status in ["connected", "answered", "call_completed", "completed"]:
+                update_data["call_status"] = "answered"
+            # No answer
+            elif connectivity_status in ["no_answer", "unanswered"]:
+                update_data["call_status"] = "no_answer"
+                update_data["retry_required"] = True
+                update_data["next_retry_at"] = (
+                    datetime.now(timezone.utc) + timedelta(minutes=5)
+                ).isoformat()
+            # Busy
+            elif connectivity_status == "busy":
+                update_data["call_status"] = "busy"
+                update_data["retry_required"] = True
+                update_data["next_retry_at"] = (
+                    datetime.now(timezone.utc) + timedelta(minutes=5)
+                ).isoformat()
+            # Failed / network issue
+            elif connectivity_status in ["failed", "network_error"]:
+                update_data["call_status"] = "failed"
+                update_data["retry_required"] = True
+                update_data["next_retry_at"] = (
+                    datetime.now(timezone.utc) + timedelta(minutes=5)
+                ).isoformat()
+
+            # Completion result
+            if completion_status == "completed":
+                update_data["call_success"] = True
+                update_data["retry_required"] = False
+                update_data["next_retry_at"] = None
+            elif completion_status in ["partial", "failed"]:
+                update_data["call_success"] = False
+
+            try:
+                res = (
+                    supabase.table("loan_leads")
+                    .update(update_data)
+                    .eq("phone_number", normalized)
+                    .execute()
+                )
+                if res.data and len(res.data) > 0:
+                    updated_lead = res.data[0]
             except Exception as lead_err:
                 logger.warning(f"Could not update lead from campaign webhook: {lead_err}")
 
         return {
-            "status": "received",
-            "direction": "outbound_campaign",
-            "event": event,
-            "call_id": call_id
+            "success": True,
+            "message": "Campaign webhook processed successfully",
+            "phone_number": normalized,
+            "connectivity_status": connectivity_status,
+            "completion_status": completion_status,
+            "update_data": update_data,
+            "updated_lead": updated_lead
         }
     except Exception as e:
         logger.error(f"CAMPAIGN WEBHOOK ERROR: {repr(e)}")
@@ -434,6 +522,7 @@ async def handle_campaign_webhook(payload: Dict[str, Any]):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
         )
+
 
 
 @router.post("/outbound/stream-leads/{campaign_id}", status_code=status.HTTP_200_OK)

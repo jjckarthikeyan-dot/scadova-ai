@@ -556,12 +556,20 @@ def test_handle_campaign_webhook(mock_supabase):
 
     response = client.post(
         "/api/loan-agency/sarvam/campaign-webhook",
-        json={"event": "call_completed", "phone_number": "+919032008222"}
+        json={
+            "phone_number": "+919032008222",
+            "connectivity_status": "no_answer",
+            "retry_attempt": 1
+        }
     )
     assert response.status_code == 200
     data = response.json()
-    assert data["status"] == "received"
-    assert data["direction"] == "outbound_campaign"
+    assert data["success"] is True
+    assert data["update_data"]["call_status"] == "no_answer"
+    assert data["update_data"]["retry_required"] is True
+    assert data["update_data"]["retry_count"] == 1
+    assert data["update_data"]["next_retry_at"] is not None
+
 
 
 @patch("backend.loan_agency.sarvam_router.supabase")
