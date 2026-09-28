@@ -268,8 +268,8 @@ async def create_outbound_campaign():
 
     now = datetime.now(timezone.utc)
 
-    # Temporary test campaign window
-    start_time = now + timedelta(minutes=2)
+    # Test campaign window (Sarvam requires start_timestamp >= 120s from now)
+    start_time = now + timedelta(minutes=5)
     end_time = now + timedelta(days=1)
 
     url = (
