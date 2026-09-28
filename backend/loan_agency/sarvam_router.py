@@ -688,6 +688,64 @@ async def stream_leads_to_campaign(
             detail=response.text
         )
 
+    # -------------------------------------------------
+    # 4. MARK ACCEPTED LEADS AS QUEUED (NOT CALLED)
+    # -------------------------------------------------
+    for lead in leads:
+        try:
+            supabase.table("loan_leads").update({
+                "call_status": "queued"
+            }).eq("id", lead["id"]).execute()
+        except Exception as update_err:
+            logger.warning(f"Could not update lead {lead.get('id')} to queued: {update_err}")
+
     return response.json()
+
+
+@router.get("/outbound/cohort-status/{campaign_id}/{cohort_id}", status_code=status.HTTP_200_OK)
+@router.get("/outbound/cohort-status/{cohort_id}", status_code=status.HTTP_200_OK)
+async def get_cohort_status(cohort_id: str, campaign_id: Optional[str] = None):
+    """
+    Check the processing status of a streamed cohort in Sarvam.
+    Doc: GET https://apps.sarvam.ai/api/scheduling/v1/orgs/{org_id}/workspaces/{workspace_id}/campaigns/{campaign_id}/cohorts/{cohort_id}
+    """
+    api_key = os.getenv("SARVAM_VOICE_AGENT_API_KEY") or os.getenv("SARVAM_API_KEY")
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="SARVAM_VOICE_AGENT_API_KEY is not configured"
+        )
+
+    target_campaign_id = campaign_id or os.getenv("SARVAM_CAMPAIGN_ID") or SARVAM_CAMPAIGN_ID
+    url = (
+        f"{SARVAM_BASE_URL}/scheduling/v1/"
+        f"orgs/{SARVAM_ORG_ID}/"
+        f"workspaces/{SARVAM_WORKSPACE_ID}/"
+        f"campaigns/{target_campaign_id}/"
+        f"cohorts/{cohort_id}"
+    )
+
+    headers = {
+        "X-API-Key": api_key
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as http_client:
+            response = await http_client.get(url, headers=headers)
+    except httpx.RequestError as req_err:
+        logger.error(f"SARVAM GET COHORT STATUS FAILED: {repr(req_err)}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Sarvam API communication failure: {str(req_err)}"
+        )
+
+    if response.is_error:
+        raise HTTPException(
+            status_code=response.status_code,
+            detail=response.text
+        )
+
+    return response.json()
+
 
 

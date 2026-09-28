@@ -645,6 +645,32 @@ def test_stream_leads_success_with_overrides(mock_supabase, mock_post):
         assert posted_users[1]["user_phone_number"] == "+919876543210"
         assert "app_overrides" not in posted_users[1]
 
+        # Verify leads updated to queued
+        assert mock_supabase.table.return_value.update.called
+        update_args = mock_supabase.table.return_value.update.call_args[0][0]
+        assert update_args == {"call_status": "queued"}
+
+
+@patch("httpx.AsyncClient.get")
+def test_get_cohort_status(mock_get):
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.is_error = False
+    mock_resp.json.return_value = {
+        "cohort_id": "cohort_xyz_123",
+        "status": "completed",
+        "result": {"total_records": 1, "valid_records": 1, "rejected_records": 0}
+    }
+    mock_get.return_value = mock_resp
+
+    with patch.dict("os.environ", {"SARVAM_VOICE_AGENT_API_KEY": "dummy_key"}):
+        response = client.get("/outbound/cohort-status/cohort_xyz_123")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["cohort_id"] == "cohort_xyz_123"
+        assert data["status"] == "completed"
+
+
 
 
 

@@ -2186,5 +2186,13 @@ async def loan_agency_campaign_webhook_endpoint(payload: Dict[str, Any]):
     return await handle_campaign_webhook(payload)
 
 
+@router.get("/outbound/cohort-status/{campaign_id}/{cohort_id}", status_code=status.HTTP_200_OK)
+@router.get("/outbound/cohort-status/{cohort_id}", status_code=status.HTTP_200_OK)
+async def loan_agency_cohort_status_endpoint(cohort_id: str, campaign_id: Optional[str] = None):
+    from .sarvam_router import get_cohort_status
+    return await get_cohort_status(cohort_id=cohort_id, campaign_id=campaign_id)
+
+
+
 
 

@@ -120,7 +120,8 @@ async def root_get_lead_context(phone_number: str):
 from backend.loan_agency.sarvam_router import (
     create_outbound_campaign,
     handle_campaign_webhook,
-    stream_leads_to_campaign
+    stream_leads_to_campaign,
+    get_cohort_status
 )
 
 @app.post("/outbound/create-campaign", tags=["Sarvam AI"])
@@ -151,6 +152,20 @@ async def root_stream_leads_alias(
         limit=limit,
         phone_number=phone_number
     )
+
+
+@app.get("/outbound/cohort-status/{campaign_id}/{cohort_id}", tags=["Sarvam AI"])
+@app.get("/outbound/cohort-status/{cohort_id}", tags=["Sarvam AI"])
+@app.get("/api/loan-agency/outbound/cohort-status/{campaign_id}/{cohort_id}", tags=["Loan Agency"])
+@app.get("/api/loan-agency/outbound/cohort-status/{cohort_id}", tags=["Loan Agency"])
+@app.get("/api/loan-agency/sarvam/cohort-status/{campaign_id}/{cohort_id}", tags=["Loan Agency"])
+@app.get("/api/loan-agency/sarvam/cohort-status/{cohort_id}", tags=["Loan Agency"])
+async def root_cohort_status_alias(
+    cohort_id: str,
+    campaign_id: Optional[str] = None
+):
+    return await get_cohort_status(cohort_id=cohort_id, campaign_id=campaign_id)
+
 
 
 
