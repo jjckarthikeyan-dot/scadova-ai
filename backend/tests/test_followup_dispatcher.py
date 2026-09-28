@@ -188,3 +188,17 @@ def test_dispatcher_status_and_lifecycle_endpoints():
 
     # Cleanup stop
     client.post("/api/sarvam/outbound/dispatcher/stop")
+
+
+@patch("backend.loan_agency.sarvam_router.run_outbound_dispatch")
+def test_auto_dispatch_endpoint(mock_run_dispatch):
+    async def fake_dispatch(campaign_id=None):
+        return {"success": True, "lead_id": 10, "reason": "new_lead"}
+
+    mock_run_dispatch.side_effect = fake_dispatch
+
+    response = client.post("/outbound/auto-dispatch")
+    assert response.status_code == 200
+    assert response.json()["lead_id"] == 10
+    mock_run_dispatch.assert_called_once()
+

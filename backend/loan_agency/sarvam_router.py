@@ -810,15 +810,13 @@ async def get_cohort_status(cohort_id: str, campaign_id: Optional[str] = None):
     return response.json()
 
 
-@router.post("/outbound/trigger-next-lead", status_code=status.HTTP_200_OK)
-@router.post("/outbound/trigger-next-lead/{campaign_id}", status_code=status.HTTP_200_OK)
-async def trigger_next_lead(campaign_id: Optional[str] = None):
+async def run_outbound_dispatch(campaign_id: Optional[str] = None):
     """
-    Auto-dialer trigger that selects the next lead based on priority:
+    Core outbound dispatch engine that selects the next lead based on priority:
     1. callback: callback_required == True and callback_at <= now
     2. reschedule: reschedule_required == True and reschedule_at <= now
     3. retry: retry_required == True and next_retry_at <= now
-    4. followup: followup_required == True and next_followup_at <= now
+    4. followup: followup_required == True and next_followup_at <= now and retry_count < 3
     5. new_lead: lead_status == 'new' and call_status == 'not_called'
 
     Streams the selected lead to the Sarvam campaign cohort and marks the lead as 'queued'.
@@ -1048,6 +1046,39 @@ async def trigger_next_lead(campaign_id: Optional[str] = None):
         "campaign_id": target_campaign_id,
         "sarvam": sarvam_result
     }
+
+
+@router.post("/outbound/auto-dispatch", status_code=status.HTTP_200_OK)
+@router.post("/outbound/auto-dispatch/{campaign_id}", status_code=status.HTTP_200_OK)
+@router.post("/api/loan-agency/outbound/auto-dispatch", status_code=status.HTTP_200_OK)
+@router.post("/api/loan-agency/outbound/auto-dispatch/{campaign_id}", status_code=status.HTTP_200_OK)
+@router.post("/outbound/trigger-next-lead", status_code=status.HTTP_200_OK)
+@router.post("/outbound/trigger-next-lead/{campaign_id}", status_code=status.HTTP_200_OK)
+async def auto_dispatch_outbound(campaign_id: Optional[str] = None):
+    """
+    Auto-dialer endpoint that triggers the highest priority eligible lead.
+    """
+    return await run_outbound_dispatch(campaign_id=campaign_id)
+
+
+# Backward-compatible alias
+trigger_next_lead = auto_dispatch_outbound
+
+
+async def outbound_scheduler():
+    """
+    Background scheduler loop that runs inside FastAPI.
+    Checks loan_leads every 60 seconds and automatically dispatches eligible leads to Sarvam.
+    """
+    while True:
+        try:
+            print("OUTBOUND SCHEDULER: checking loan_leads...")
+            result = await run_outbound_dispatch()
+            print("OUTBOUND SCHEDULER RESULT:", result)
+        except Exception as exc:
+            print("OUTBOUND SCHEDULER ERROR:", str(exc))
+        await asyncio.sleep(60)
+
 
 
 # ============================================================

@@ -42,20 +42,34 @@ from backend.loan_agency.router import (
 )
 
 
+import asyncio
+import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from backend.loan_agency.sarvam_router import outbound_scheduler, run_outbound_dispatch, auto_dispatch_outbound
 from backend.loan_agency.dispatcher import followup_dispatcher
+
+logger = logging.getLogger(__name__)
+scheduler_task = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Automatically start background dispatcher if enabled and not in testing
+    global scheduler_task
+    print("Starting outbound scheduler...")
     if "pytest" not in sys.modules and os.getenv("ENABLE_AUTO_DISPATCHER", "true").lower() in ("true", "1", "yes"):
-        await followup_dispatcher.start()
+        scheduler_task = asyncio.create_task(
+            outbound_scheduler()
+        )
     yield
-    await followup_dispatcher.stop()
+    if scheduler_task and not scheduler_task.done():
+        scheduler_task.cancel()
+        try:
+            await scheduler_task
+        except asyncio.CancelledError:
+            pass
 
 app = FastAPI(
     title="Scadova AI Backend",
@@ -201,6 +215,10 @@ async def root_cohort_status_alias(
     return await get_cohort_status(cohort_id=cohort_id, campaign_id=campaign_id)
 
 
+@app.post("/outbound/auto-dispatch", tags=["Sarvam AI"])
+@app.post("/outbound/auto-dispatch/{campaign_id}", tags=["Sarvam AI"])
+@app.post("/api/loan-agency/outbound/auto-dispatch", tags=["Loan Agency"])
+@app.post("/api/loan-agency/outbound/auto-dispatch/{campaign_id}", tags=["Loan Agency"])
 @app.post("/outbound/trigger-next-lead", tags=["Sarvam AI"])
 @app.post("/outbound/trigger-next-lead/{campaign_id}", tags=["Sarvam AI"])
 @app.post("/api/loan-agency/outbound/trigger-next-lead", tags=["Loan Agency"])
@@ -210,7 +228,7 @@ async def root_cohort_status_alias(
 async def root_trigger_next_lead_alias(
     campaign_id: Optional[str] = None
 ):
-    return await trigger_next_lead(campaign_id=campaign_id)
+    return await auto_dispatch_outbound(campaign_id=campaign_id)
 
 
 @app.get("/outbound/dispatcher/status", tags=["Sarvam AI"])
