@@ -608,7 +608,7 @@ async def stream_leads_to_campaign(
         }
 
 
-        user_entry = {
+        user = {
             "user_phone_number": phone,
             "user_identifier": str(lead["id"]),
             "app_variables": app_variables
@@ -617,11 +617,12 @@ async def stream_leads_to_campaign(
         # If preferred_language is set, send initial_language_name override
         # If null/empty, intentionally omit so normal greeting can run
         if lead.get("preferred_language"):
-            user_entry["app_overrides"] = {
+            user["app_overrides"] = {
                 "initial_language_name": lead["preferred_language"]
             }
 
-        users.append(user_entry)
+        users.append(user)
+
 
     if not users:
         return {
