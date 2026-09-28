@@ -13,7 +13,8 @@ from .schemas import (
     BusinessLoanProfileWithApplicationId,
     SarvamDeploymentRequest,
     SarvamOutboundCallRequest,
-    SarvamWebhookPayload
+    SarvamWebhookPayload,
+    LoanApplicationCreate
 )
 from .router import (
     save_employment_profile_from_body,
@@ -22,8 +23,10 @@ from .router import (
     save_business_loan_profile_from_body,
     get_loan_application,
     get_application_by_mobile,
-    get_all_applications_by_mobile
+    get_all_applications_by_mobile,
+    create_loan_application
 )
+
 
 logger = logging.getLogger("sarvam_router")
 
@@ -55,6 +58,15 @@ async def sarvam_get_all_applications_by_mobile(mobile_number: str):
     Direct handler for Sarvam AI telephony tool calling /api/sarvam/applications/mobile/{mobile_number}/all.
     """
     return await get_all_applications_by_mobile(mobile_number)
+
+
+@router.post("/applications", status_code=status.HTTP_201_CREATED)
+async def sarvam_create_loan_application_endpoint(payload: LoanApplicationCreate):
+    """
+    Direct handler for Sarvam AI telephony tool calling /api/sarvam/applications.
+    """
+    return await create_loan_application(payload)
+
 
 
 @router.put("/employment")

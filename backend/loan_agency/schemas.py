@@ -45,6 +45,11 @@ class LoanApplicationCreate(BaseModel):
         description="Applicant mobile number"
     )
 
+    lead_id: Optional[int] = Field(
+        default=None,
+        description="Optional lead ID from loan_leads to automatically link"
+    )
+
     age: Optional[int] = Field(
         default=None,
         ge=18,
@@ -98,6 +103,9 @@ class LoanApplicationResponse(BaseModel):
     # Supabase / database application ID.
     # This is the ID every child table must use.
     id: int
+    application_id: Optional[int] = None
+    success: Optional[bool] = True
+
 
     application_number: Optional[str] = None
 

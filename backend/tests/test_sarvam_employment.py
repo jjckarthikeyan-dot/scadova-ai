@@ -708,6 +708,44 @@ def test_link_application_to_lead_not_found(mock_supabase):
     assert response.json()["detail"] == "Lead not found"
 
 
+@patch("backend.loan_agency.router.supabase")
+def test_create_loan_application_links_lead(mock_supabase):
+    def fake_table(name):
+        mock = MagicMock()
+        if name == "loan_applications":
+            mock.select.return_value.eq.return_value.limit.return_value.execute.return_value.data = []
+            mock.insert.return_value.execute.return_value.data = [{
+                "id": 42,
+                "loan_type": "personal_loan",
+                "full_name": "Test User",
+                "mobile_number": "+919876543210"
+            }]
+        elif name == "loan_leads":
+            mock.update.return_value.eq.return_value.execute.return_value.data = [{
+                "id": 10,
+                "latest_application_id": 42,
+                "application_created": True,
+                "lead_status": "application_started"
+            }]
+        return mock
+
+    mock_supabase.table.side_effect = fake_table
+
+    payload = {
+        "loan_type": "personal_loan",
+        "full_name": "Test User",
+        "mobile_number": "+919876543210",
+        "lead_id": 10
+    }
+    response = client.post("/api/loan-agency/applications", json=payload)
+    assert response.status_code == 201
+    data = response.json()
+    assert data["success"] is True
+    assert data["id"] == 42
+    assert data["application_id"] == 42
+
+
+
 
 
 

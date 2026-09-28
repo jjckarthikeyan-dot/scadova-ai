@@ -25,7 +25,8 @@ from backend.loan_agency.schemas import (
     PersonalLoanProfileWithApplicationId,
     UsedCarLoanProfileWithApplicationId,
     BusinessLoanProfileWithApplicationId,
-    LinkLeadApplication
+    LinkLeadApplication,
+    LoanApplicationCreate
 )
 from backend.loan_agency.router import (
     save_employment_profile_from_body,
@@ -36,8 +37,10 @@ from backend.loan_agency.router import (
     get_all_applications_by_mobile,
     get_lead_by_phone,
     get_lead_context,
-    link_application_to_lead
+    link_application_to_lead,
+    create_loan_application
 )
+
 
 
 from fastapi import FastAPI, HTTPException
@@ -104,9 +107,16 @@ async def root_used_car_loans_alias(payload: UsedCarLoanProfileWithApplicationId
 async def root_business_loans_alias(payload: BusinessLoanProfileWithApplicationId):
     return await save_business_loan_profile_from_body(payload)
 
+@app.post("/applications", tags=["Loan Agency"], status_code=201)
+@app.post("/api/loan/applications", tags=["Loan Agency"], status_code=201)
+@app.post("/api/sarvam/applications", tags=["Sarvam AI"], status_code=201)
+async def root_create_application_alias(payload: LoanApplicationCreate):
+    return await create_loan_application(payload)
+
 @app.get("/api/loan/applications/mobile/{mobile_number}", tags=["Loan Agency"])
 async def root_get_application_by_mobile(mobile_number: str):
     return await get_application_by_mobile(mobile_number)
+
 
 @app.get("/api/loan/applications/mobile/{mobile_number}/all", tags=["Loan Agency"])
 async def root_get_all_applications_by_mobile(mobile_number: str):
