@@ -2299,3 +2299,18 @@ async def link_application_to_lead(payload: LinkLeadApplication):
 async def loan_agency_trigger_next_lead_endpoint(campaign_id: Optional[str] = None):
     from .sarvam_router import trigger_next_lead
     return await trigger_next_lead(campaign_id=campaign_id)
+
+
+async def run_outbound_dispatch(campaign_id: Optional[str] = None):
+    """
+    Direct function to run outbound lead dispatch.
+    """
+    from .sarvam_router import run_outbound_dispatch as _run_dispatch
+    return await _run_dispatch(campaign_id=campaign_id)
+
+
+@router.post("/outbound/auto-dispatch", status_code=status.HTTP_200_OK)
+@router.post("/outbound/auto-dispatch/{campaign_id}", status_code=status.HTTP_200_OK)
+async def auto_dispatch_outbound(campaign_id: Optional[str] = None):
+    return await run_outbound_dispatch(campaign_id=campaign_id)
+

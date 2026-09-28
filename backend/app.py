@@ -1,5 +1,8 @@
 import os
 import sys
+import asyncio
+import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
@@ -21,9 +24,45 @@ from backend.loan_agency.sarvam_router import router as sarvam_router
 from backend.appointment_booking.router import router as appointment_booking_router
 from backend.admin.routes import router as admin_router
 
+logger = logging.getLogger(__name__)
+
+_scheduler_task = None
+
+
+async def outbound_scheduler():
+    print("OUTBOUND SCHEDULER STARTED")
+    while True:
+        try:
+            print("OUTBOUND SCHEDULER: checking loan_leads...")
+            from backend.loan_agency.router import run_outbound_dispatch
+            result = await run_outbound_dispatch()
+            print("OUTBOUND SCHEDULER RESULT:", result)
+        except Exception as exc:
+            print("OUTBOUND SCHEDULER ERROR:", repr(exc))
+        await asyncio.sleep(60)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global _scheduler_task
+    print("STARTING OUTBOUND AUTOMATION")
+    if "pytest" not in sys.modules and os.getenv("ENABLE_AUTO_DISPATCHER", "true").lower() in ("true", "1", "yes"):
+        _scheduler_task = asyncio.create_task(
+            outbound_scheduler()
+        )
+    yield
+    if _scheduler_task:
+        _scheduler_task.cancel()
+        try:
+            await _scheduler_task
+        except asyncio.CancelledError:
+            pass
+
+
 app = FastAPI(
     title="Scadova AI Backend",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 app.add_middleware(

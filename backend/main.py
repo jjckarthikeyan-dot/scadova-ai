@@ -53,21 +53,22 @@ from backend.loan_agency.sarvam_router import outbound_scheduler, run_outbound_d
 from backend.loan_agency.dispatcher import followup_dispatcher
 
 logger = logging.getLogger(__name__)
-scheduler_task = None
+_scheduler_task = None
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global scheduler_task
-    print("Starting outbound scheduler...")
+    global _scheduler_task
+    print("STARTING OUTBOUND AUTOMATION")
     if "pytest" not in sys.modules and os.getenv("ENABLE_AUTO_DISPATCHER", "true").lower() in ("true", "1", "yes"):
-        scheduler_task = asyncio.create_task(
+        _scheduler_task = asyncio.create_task(
             outbound_scheduler()
         )
     yield
-    if scheduler_task and not scheduler_task.done():
-        scheduler_task.cancel()
+    if _scheduler_task and not _scheduler_task.done():
+        _scheduler_task.cancel()
         try:
-            await scheduler_task
+            await _scheduler_task
         except asyncio.CancelledError:
             pass
 
