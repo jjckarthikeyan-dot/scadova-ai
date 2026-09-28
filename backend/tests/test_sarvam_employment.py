@@ -506,6 +506,7 @@ def test_get_lead_context_endpoint(mock_supabase):
 def test_get_lead_context_not_found(mock_supabase):
     table_mock = MagicMock()
     table_mock.select.return_value.eq.return_value.limit.return_value.execute.return_value.data = []
+    table_mock.select.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value.data = []
     mock_supabase.table.return_value = table_mock
 
     response = client.get("/api/loan-agency/leads/context/+919999999998")

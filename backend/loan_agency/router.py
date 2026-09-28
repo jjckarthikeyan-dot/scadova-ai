@@ -1893,16 +1893,16 @@ async def get_lead_by_phone(phone_number: str):
 async def get_lead_context(phone_number: str):
     """
     Consolidated lead context endpoint called before Sarvam outbound automation.
-    Returns in one response:
-    lead details
-    + preferred language
-    + latest application
-    + application status
-    + employment completion
-    + product profile completion
-    + follow-up/callback/reschedule/retry state
-    + last completed step
-    + next action
+    Resolution Order:
+    1. Normalize phone number
+    2. Find lead by phone
+    3. Find latest loan_application by the SAME phone number
+    4. If application exists, link and derive application state
+    5. Determine preferred language
+    6. Load employment profile
+    7. Load correct Personal / Business / Used Car profile
+    8. Determine what is complete and what is still pending
+    9. Return one consolidated context
     """
     normalized = (
         phone_number
@@ -1915,6 +1915,9 @@ async def get_lead_context(phone_number: str):
     elif len(normalized) == 10 and normalized.isdigit():
         normalized = f"+91{normalized}"
 
+    # -------------------------------------------------
+    # 1. FIND LEAD
+    # -------------------------------------------------
     lead_result = (
         supabase.table("loan_leads")
         .select("*")
@@ -1922,18 +1925,10 @@ async def get_lead_context(phone_number: str):
         .limit(1)
         .execute()
     )
-
-    if not lead_result.data:
-        # Fallback check for alternate formats
-        alt_numbers = []
-        if normalized.startswith("+91") and len(normalized) == 13:
-            alt_numbers.append(normalized[3:])
-            alt_numbers.append(normalized[1:])
-        elif len(normalized) == 10:
-            alt_numbers.append(normalized)
-            alt_numbers.append(f"91{normalized}")
-
-        for alt in alt_numbers:
+    lead = lead_result.data[0] if lead_result.data else None
+    if not lead:
+        raw_10 = normalized.replace("+91", "")
+        for alt in [raw_10, f"91{raw_10}"]:
             alt_res = (
                 supabase.table("loan_leads")
                 .select("*")
@@ -1942,31 +1937,26 @@ async def get_lead_context(phone_number: str):
                 .execute()
             )
             if alt_res.data:
-                lead_result = alt_res
+                lead = alt_res.data[0]
                 break
 
-    if not lead_result.data:
-        return {
-            "lead_found": False,
-            "phone_number": normalized
-        }
-
-    lead = lead_result.data[0]
+    # -------------------------------------------------
+    # 2. FIND LATEST APPLICATION BY SAME PHONE NUMBER
+    # -------------------------------------------------
+    possible_numbers = [
+        normalized,
+        normalized.replace("+91", ""),
+        f"91{normalized.replace('+91', '')}"
+    ]
     application = None
-    employment_profile = None
-    product_profile = None
-    employment_completed = False
-    product_profile_completed = False
-    application_id = lead.get("latest_application_id")
-    application_status = None
-    loan_type = None
 
-    if application_id:
+    # Check lead.latest_application_id first if already recorded
+    if lead and lead.get("latest_application_id"):
         try:
             app_res = (
                 supabase.table("loan_applications")
                 .select("*")
-                .eq("id", application_id)
+                .eq("id", lead["latest_application_id"])
                 .limit(1)
                 .execute()
             )
@@ -1975,32 +1965,71 @@ async def get_lead_context(phone_number: str):
         except Exception:
             pass
 
+    # Discover latest application by phone number variations
     if not application:
+        for number in possible_numbers:
+            try:
+                app_result = (
+                    supabase.table("loan_applications")
+                    .select("*")
+                    .eq("mobile_number", number)
+                    .order("created_at", desc=True)
+                    .limit(1)
+                    .execute()
+                )
+                if app_result.data:
+                    application = app_result.data[0]
+                    break
+            except Exception:
+                pass
+
+    if not lead and not application:
+        return {
+            "lead_found": False,
+            "phone_number": normalized
+        }
+
+    # -------------------------------------------------
+    # 3. DERIVE APPLICATION STATE
+    # -------------------------------------------------
+    application_created = application is not None
+    application_id = application["id"] if application else None
+    loan_type = application.get("loan_type") if application else None
+    application_status = application.get("status") if application else None
+
+    # Automatically link latest_application_id to lead row if not linked
+    if lead and application and not lead.get("latest_application_id"):
         try:
-            app_by_mobile = (
-                supabase.table("loan_applications")
-                .select("*")
-                .eq("mobile_number", normalized)
-                .order("created_at", desc=True)
-                .limit(1)
-                .execute()
-            )
-            if app_by_mobile.data:
-                application = app_by_mobile.data[0]
-                application_id = application.get("id")
+            supabase.table("loan_leads").update({
+                "latest_application_id": application["id"],
+                "application_created": True,
+                "updated_at": datetime.utcnow().isoformat()
+            }).eq("id", lead["id"]).execute()
+            lead["latest_application_id"] = application["id"]
+            lead["application_created"] = True
         except Exception:
             pass
 
-    if application:
-        application_status = application.get("status")
-        loan_type = application.get("loan_type")
-        app_rec_id = application.get("id")
+    # -------------------------------------------------
+    # 4. DETERMINE PREFERRED LANGUAGE
+    # -------------------------------------------------
+    preferred_language = (
+        (lead.get("preferred_language") if lead and lead.get("preferred_language") else None)
+        or (application.get("preferred_language") if application and application.get("preferred_language") else None)
+        or None
+    )
 
+    # -------------------------------------------------
+    # 5. LOAD EMPLOYMENT PROFILE
+    # -------------------------------------------------
+    employment_profile = None
+    employment_completed = False
+    if application and application_id:
         try:
             emp_res = (
                 supabase.table("employment_profiles")
                 .select("*")
-                .eq("application_id", app_rec_id)
+                .eq("application_id", application_id)
                 .limit(1)
                 .execute()
             )
@@ -2010,6 +2039,12 @@ async def get_lead_context(phone_number: str):
         except Exception:
             pass
 
+    # -------------------------------------------------
+    # 6. LOAD PRODUCT PROFILE (Personal / Business / Used Car)
+    # -------------------------------------------------
+    product_profile = None
+    product_profile_completed = False
+    if application and application_id and loan_type:
         table_map = {
             "personal_loan": "personal_loan_profiles",
             "used_car_loan": "used_car_loan_profiles",
@@ -2021,7 +2056,7 @@ async def get_lead_context(phone_number: str):
                 prof_res = (
                     supabase.table(target_table)
                     .select("*")
-                    .eq("application_id", app_rec_id)
+                    .eq("application_id", application_id)
                     .limit(1)
                     .execute()
                 )
@@ -2031,52 +2066,94 @@ async def get_lead_context(phone_number: str):
             except Exception:
                 pass
 
-    preferred_language = (
-        lead.get("preferred_language")
-        or (application.get("preferred_language") if application else None)
-        or "Telugu"
-    )
+    # -------------------------------------------------
+    # 7. DETERMINE COMPLETION & PENDING STEPS
+    # -------------------------------------------------
+    completed_steps = []
+    pending_steps = []
+
+    if application:
+        completed_steps.append("loan_application")
+        if employment_completed:
+            completed_steps.append("employment_profile")
+        else:
+            pending_steps.append("employment_profile")
+
+        if product_profile_completed:
+            completed_steps.append(f"{loan_type}_profile")
+        else:
+            pending_steps.append(f"{loan_type}_profile")
+    else:
+        pending_steps = ["loan_application", "employment_profile", "loan_profile"]
+
+    last_completed_step = completed_steps[-1] if completed_steps else (lead.get("last_completed_step") if lead else None)
+
+    # -------------------------------------------------
+    # 8. DETERMINE NEXT ACTION
+    # -------------------------------------------------
+    next_action = None
+    if lead and lead.get("next_action"):
+        next_action = lead["next_action"]
+    elif lead and lead.get("callback_required"):
+        next_action = "conduct_scheduled_callback"
+    elif lead and lead.get("retry_required"):
+        next_action = "retry_outbound_call"
+    elif not application_created:
+        next_action = "initiate_application"
+    elif not employment_completed:
+        next_action = "collect_employment_profile"
+    elif not product_profile_completed:
+        next_action = f"collect_{loan_type}_profile"
+    elif application_status == "DRAFT":
+        next_action = "review_and_submit"
+    else:
+        next_action = "application_completed"
 
     followup_state = {
-        "followup_required": bool(lead.get("followup_required")),
-        "next_followup_at": lead.get("next_followup_at"),
-        "followup_1_at": lead.get("followup_1_at"),
-        "followup_1_status": lead.get("followup_1_status"),
-        "followup_2_at": lead.get("followup_2_at"),
-        "followup_2_status": lead.get("followup_2_status"),
-        "followup_3_at": lead.get("followup_3_at"),
-        "followup_3_status": lead.get("followup_3_status"),
+        "followup_required": bool(lead.get("followup_required")) if lead else False,
+        "next_followup_at": lead.get("next_followup_at") if lead else None,
+        "followup_1_at": lead.get("followup_1_at") if lead else None,
+        "followup_1_status": lead.get("followup_1_status") if lead else None,
+        "followup_2_at": lead.get("followup_2_at") if lead else None,
+        "followup_2_status": lead.get("followup_2_status") if lead else None,
+        "followup_3_at": lead.get("followup_3_at") if lead else None,
+        "followup_3_status": lead.get("followup_3_status") if lead else None,
     }
 
     callback_state = {
-        "callback_required": bool(lead.get("callback_required")),
-        "callback_at": lead.get("callback_at"),
-        "reschedule_required": bool(lead.get("reschedule_required")),
-        "reschedule_at": lead.get("reschedule_at")
+        "callback_required": bool(lead.get("callback_required")) if lead else False,
+        "callback_at": lead.get("callback_at") if lead else None,
+        "reschedule_required": bool(lead.get("reschedule_required")) if lead else False,
+        "reschedule_at": lead.get("reschedule_at") if lead else None,
     }
 
     retry_state = {
-        "retry_required": bool(lead.get("retry_required")),
-        "retry_count": int(lead.get("retry_count") or 0),
-        "next_retry_at": lead.get("next_retry_at")
+        "retry_required": bool(lead.get("retry_required")) if lead else False,
+        "retry_count": int(lead.get("retry_count") or 0) if lead else 0,
+        "next_retry_at": lead.get("next_retry_at") if lead else None,
     }
 
+    # -------------------------------------------------
+    # 9. RETURN CONSOLIDATED CONTEXT
+    # -------------------------------------------------
     return {
-        "lead_found": True,
-        "full_name": lead.get("full_name"),
+        "lead_found": lead is not None,
         "phone_number": normalized,
-        "lead_status": lead.get("lead_status", "new"),
+        "full_name": (lead.get("full_name") if lead else None) or (application.get("full_name") if application else None),
+        "lead_status": lead.get("lead_status", "new") if lead else "new",
         "preferred_language": preferred_language,
-        "city": lead.get("city"),
-        "call_status": lead.get("call_status", "not_called"),
-        "application_created": bool(lead.get("application_created") or application is not None),
+        "city": (lead.get("city") if lead else None) or (application.get("city") if application else None),
+        "call_status": lead.get("call_status", "not_called") if lead else "not_called",
+        "application_created": application_created,
         "application_id": application_id,
         "application_status": application_status,
         "loan_type": loan_type,
         "employment_completed": employment_completed,
         "product_profile_completed": product_profile_completed,
-        "last_completed_step": lead.get("last_completed_step"),
-        "next_action": lead.get("next_action"),
+        "last_completed_step": last_completed_step,
+        "completed_steps": completed_steps,
+        "pending_steps": pending_steps,
+        "next_action": next_action,
         "followup_state": followup_state,
         "callback_state": callback_state,
         "retry_state": retry_state,

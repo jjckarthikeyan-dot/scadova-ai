@@ -1132,6 +1132,8 @@ class LeadContextResponse(BaseModel):
     employment_completed: Optional[bool] = False
     product_profile_completed: Optional[bool] = False
     last_completed_step: Optional[str] = None
+    completed_steps: Optional[list] = None
+    pending_steps: Optional[list] = None
     next_action: Optional[str] = None
 
     followup_state: Optional[Dict[str, Any]] = None
