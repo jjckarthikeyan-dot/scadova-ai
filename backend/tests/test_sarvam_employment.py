@@ -804,6 +804,91 @@ def test_trigger_next_lead_callback_priority(mock_supabase, mock_post):
         assert "last_call_at" in update_args
 
 
+@patch("backend.loan_agency.router.supabase")
+def test_save_personal_loan_profile_failure_marks_lead_pending(mock_supabase):
+    lead_update_mock = MagicMock()
+
+    def fake_table(name):
+        mock = MagicMock()
+        if name == "loan_applications":
+            mock.select.return_value.eq.return_value.limit.return_value.execute.return_value.data = [{
+                "id": 105,
+                "loan_type": "personal_loan"
+            }]
+        elif name == "personal_loan_profiles":
+            # Simulate DB failure returning empty data
+            mock.upsert.return_value.execute.return_value.data = []
+        elif name == "loan_leads":
+            return lead_update_mock
+        return mock
+
+    mock_supabase.table.side_effect = fake_table
+
+    payload = {
+        "application_id": 105,
+        "requested_amount": 500000.0,
+        "loan_purpose": "home_renovation"
+    }
+
+    response = client.post("/api/loan-agency/personal-loans", json=payload)
+    assert response.status_code == 500
+
+    lead_update_mock.update.assert_called()
+    update_data = lead_update_mock.update.call_args[0][0]
+    assert update_data["lead_status"] == "application_pending"
+    assert update_data["call_status"] == "followup_pending"
+    assert update_data["application_completed"] is False
+    assert update_data["followup_required"] is True
+    assert update_data["next_followup_at"] is not None
+    assert update_data["last_completed_step"] == "employment_completed"
+    assert update_data["next_action"] == "complete_personal_loan_profile"
+    lead_update_mock.update.return_value.eq.assert_called_with("latest_application_id", 105)
+
+
+@patch("backend.loan_agency.router.supabase")
+def test_save_personal_loan_profile_success_marks_lead_completed(mock_supabase):
+    lead_update_mock = MagicMock()
+
+    def fake_table(name):
+        mock = MagicMock()
+        if name == "loan_applications":
+            mock.select.return_value.eq.return_value.limit.return_value.execute.return_value.data = [{
+                "id": 105,
+                "loan_type": "personal_loan"
+            }]
+        elif name == "personal_loan_profiles":
+            mock.upsert.return_value.execute.return_value.data = [{
+                "application_id": 105,
+                "requested_amount": 500000.0,
+                "loan_purpose": "home_renovation"
+            }]
+        elif name == "loan_leads":
+            return lead_update_mock
+        return mock
+
+    mock_supabase.table.side_effect = fake_table
+
+    payload = {
+        "application_id": 105,
+        "requested_amount": 500000.0,
+        "loan_purpose": "home_renovation"
+    }
+
+    response = client.post("/api/loan-agency/personal-loans", json=payload)
+    assert response.status_code == 200
+
+    lead_update_mock.update.assert_called()
+    update_data = lead_update_mock.update.call_args[0][0]
+    assert update_data["lead_status"] == "application_completed"
+    assert update_data["call_status"] == "completed"
+    assert update_data["application_completed"] is True
+    assert update_data["followup_required"] is False
+    assert update_data["next_followup_at"] is None
+    assert update_data["next_action"] is None
+    assert update_data["lead_success"] is True
+    lead_update_mock.update.return_value.eq.assert_called_with("latest_application_id", 105)
+
+
 
 
 

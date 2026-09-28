@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import logging
 import uuid
 
@@ -968,18 +968,14 @@ async def update_personal_loan_profile(
     """
     Create/update Personal Loan qualification information.
     """
-
     try:
-
         application = ensure_application_exists(
             application_id
         )
 
-
         # Protect against writing personal-loan data
         # into a different product application.
         if application.get("loan_type") != "personal_loan":
-
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
@@ -989,18 +985,15 @@ async def update_personal_loan_profile(
                 )
             )
 
-
         raw_data = payload.model_dump(
             exclude_none=True
         )
-
 
         clean_data = {
             key: value
             for key, value in raw_data.items()
             if key in PERSONAL_LOAN_COLUMNS
         }
-
 
         response = (
             supabase
@@ -1015,34 +1008,51 @@ async def update_personal_loan_profile(
             .execute()
         )
 
-
         if not response.data:
-
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=(
-                    "Failed to update Personal Loan profile"
-                )
+                detail="Failed to update Personal Loan profile"
             )
 
+        (
+            supabase.table("loan_leads")
+            .update({
+                "lead_status": "application_completed",
+                "call_status": "completed",
+                "application_completed": True,
+                "followup_required": False,
+                "next_followup_at": None,
+                "next_action": None,
+                "lead_success": True
+            })
+            .eq("latest_application_id", application_id)
+            .execute()
+        )
 
         return response.data[0]
 
-
-    except HTTPException:
+    except Exception as exc:
+        try:
+            (
+                supabase.table("loan_leads")
+                .update({
+                    "lead_status": "application_pending",
+                    "call_status": "followup_pending",
+                    "application_completed": False,
+                    "followup_required": True,
+                    "next_followup_at": (
+                        datetime.now(timezone.utc)
+                        + timedelta(minutes=5)
+                    ).isoformat(),
+                    "last_completed_step": "employment_completed",
+                    "next_action": "complete_personal_loan_profile"
+                })
+                .eq("latest_application_id", application_id)
+                .execute()
+            )
+        except Exception as lead_error:
+            print("Failed to mark lead pending:", lead_error)
         raise
-
-
-    except Exception as e:
-
-        logger.exception(
-            "UPDATE PERSONAL LOAN ERROR"
-        )
-
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
 
 
 @router.put("/personal-loans")
@@ -1056,32 +1066,75 @@ async def save_personal_loan_profile_from_body(
     """
     application_id = payload.application_id
 
-    await ensure_application_exists(application_id)
+    try:
+        await ensure_application_exists(application_id)
 
-    data = payload.model_dump(
-        exclude={"application_id"},
-        exclude_none=True
-    )
-
-    clean_data = {
-        key: value
-        for key, value in data.items()
-        if key in PERSONAL_LOAN_COLUMNS
-    }
-    clean_data["application_id"] = application_id
-
-    result = (
-        supabase.table("personal_loan_profiles")
-        .upsert(
-            clean_data,
-            on_conflict="application_id"
+        data = payload.model_dump(
+            exclude={"application_id"},
+            exclude_none=True
         )
-        .execute()
-    )
 
-    if result.data and len(result.data) > 0:
+        clean_data = {
+            key: value
+            for key, value in data.items()
+            if key in PERSONAL_LOAN_COLUMNS
+        }
+        clean_data["application_id"] = application_id
+
+        result = (
+            supabase.table("personal_loan_profiles")
+            .upsert(
+                clean_data,
+                on_conflict="application_id"
+            )
+            .execute()
+        )
+
+        if not result.data:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to save personal loan profile"
+            )
+
+        (
+            supabase.table("loan_leads")
+            .update({
+                "lead_status": "application_completed",
+                "call_status": "completed",
+                "application_completed": True,
+                "followup_required": False,
+                "next_followup_at": None,
+                "next_action": None,
+                "lead_success": True
+            })
+            .eq("latest_application_id", application_id)
+            .execute()
+        )
+
         return result.data[0]
-    return clean_data
+
+    except Exception as exc:
+        try:
+            (
+                supabase.table("loan_leads")
+                .update({
+                    "lead_status": "application_pending",
+                    "call_status": "followup_pending",
+                    "application_completed": False,
+                    "followup_required": True,
+                    "next_followup_at": (
+                        datetime.now(timezone.utc)
+                        + timedelta(minutes=5)
+                    ).isoformat(),
+                    "last_completed_step": "employment_completed",
+                    "next_action": "complete_personal_loan_profile"
+                })
+                .eq("latest_application_id", application_id)
+                .execute()
+            )
+        except Exception as lead_error:
+            print("Failed to mark lead pending:", lead_error)
+        raise
 
 
 @router.get(
