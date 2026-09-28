@@ -1,7 +1,9 @@
 import os
 import sys
 from pathlib import Path
+from typing import Optional
 from fastapi import FastAPI
+
 
 # Ensure both repository root and backend directory are in sys.path
 backend_dir = Path(__file__).resolve().parent
@@ -133,19 +135,23 @@ async def root_campaign_webhook(payload: dict):
     return await handle_campaign_webhook(payload)
 
 
+@app.post("/outbound/stream-leads", tags=["Sarvam AI"])
 @app.post("/outbound/stream-leads/{campaign_id}", tags=["Sarvam AI"])
+@app.post("/api/loan-agency/outbound/stream-leads", tags=["Loan Agency"])
 @app.post("/api/loan-agency/outbound/stream-leads/{campaign_id}", tags=["Loan Agency"])
+@app.post("/api/loan-agency/sarvam/stream-leads", tags=["Loan Agency"])
 @app.post("/api/loan-agency/sarvam/stream-leads/{campaign_id}", tags=["Loan Agency"])
 async def root_stream_leads_alias(
-    campaign_id: str,
+    campaign_id: Optional[str] = None,
     limit: int = 10,
-    phone_number: str = None
+    phone_number: Optional[str] = None
 ):
     return await stream_leads_to_campaign(
         campaign_id=campaign_id,
         limit=limit,
         phone_number=phone_number
     )
+
 
 
 

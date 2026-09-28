@@ -2164,9 +2164,10 @@ async def get_lead_context(phone_number: str):
     }
 
 
+@router.post("/outbound/stream-leads", status_code=status.HTTP_200_OK)
 @router.post("/outbound/stream-leads/{campaign_id}", status_code=status.HTTP_200_OK)
 async def loan_agency_stream_leads_endpoint(
-    campaign_id: str,
+    campaign_id: Optional[str] = None,
     limit: int = 10,
     phone_number: Optional[str] = None
 ):
@@ -2176,6 +2177,7 @@ async def loan_agency_stream_leads_endpoint(
         limit=limit,
         phone_number=phone_number
     )
+
 
 
 @router.post("/sarvam/campaign-webhook", status_code=status.HTTP_200_OK)

@@ -250,6 +250,8 @@ SARVAM_APP_VERSION = 6
 
 SARVAM_CONNECTION_ID = "1fccc720-e6-bfd93aa8-45de"
 SARVAM_OUTBOUND_NUMBER = "+918071582250"
+SARVAM_CAMPAIGN_ID = os.getenv("SARVAM_CAMPAIGN_ID", "MKN-Loan-Le-181e5d84-a3cc")
+
 
 
 @router.post("/outbound/create-campaign", status_code=status.HTTP_200_OK)
@@ -525,16 +527,25 @@ async def handle_campaign_webhook(payload: Dict[str, Any]):
 
 
 
+@router.post("/outbound/stream-leads", status_code=status.HTTP_200_OK)
 @router.post("/outbound/stream-leads/{campaign_id}", status_code=status.HTTP_200_OK)
 async def stream_leads_to_campaign(
-    campaign_id: str,
+    campaign_id: Optional[str] = None,
     limit: int = 10,
     phone_number: Optional[str] = None
 ):
     """
     Take eligible leads from loan_leads and stream them into the specified Sarvam campaign cohort.
+    Uses campaign_id path parameter, or defaults to SARVAM_CAMPAIGN_ID env var / code default.
     Doc: POST https://apps.sarvam.ai/api/scheduling/v1/orgs/{org_id}/workspaces/{workspace_id}/campaigns/{campaign_id}/cohorts/stream
     """
+    target_campaign_id = campaign_id or os.getenv("SARVAM_CAMPAIGN_ID") or SARVAM_CAMPAIGN_ID
+    if not target_campaign_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No campaign_id provided and SARVAM_CAMPAIGN_ID is not configured"
+        )
+
     api_key = os.getenv("SARVAM_VOICE_AGENT_API_KEY") or os.getenv("SARVAM_API_KEY")
     if not api_key:
         raise HTTPException(
@@ -624,8 +635,9 @@ async def stream_leads_to_campaign(
         f"{SARVAM_BASE_URL}/scheduling/v1/"
         f"orgs/{SARVAM_ORG_ID}/"
         f"workspaces/{SARVAM_WORKSPACE_ID}/"
-        f"campaigns/{campaign_id}/cohorts/stream"
+        f"campaigns/{target_campaign_id}/cohorts/stream"
     )
+
 
     headers = {
         "X-API-Key": api_key,
