@@ -889,6 +889,106 @@ def test_save_personal_loan_profile_success_marks_lead_completed(mock_supabase):
     lead_update_mock.update.return_value.eq.assert_called_with("latest_application_id", 105)
 
 
+@patch("backend.loan_agency.router.supabase")
+def test_unique_application_id_endpoints_pattern(mock_supabase):
+    lead_update_mock = MagicMock()
+    app_select_mock = MagicMock()
+    employment_upsert_mock = MagicMock()
+    personal_upsert_mock = MagicMock()
+    business_upsert_mock = MagicMock()
+    used_car_upsert_mock = MagicMock()
+
+    def fake_table(name):
+        if name == "loan_applications":
+            return app_select_mock
+        elif name == "employment_profiles":
+            return employment_upsert_mock
+        elif name == "personal_loan_profiles":
+            return personal_upsert_mock
+        elif name == "business_loan_profiles":
+            return business_upsert_mock
+        elif name == "used_car_loan_profiles":
+            return used_car_upsert_mock
+        elif name == "loan_leads":
+            return lead_update_mock
+        return MagicMock()
+
+    mock_supabase.table.side_effect = fake_table
+
+    # 1. Employment Profile with application_id in query param
+    app_select_mock.select.return_value.eq.return_value.limit.return_value.execute.return_value.data = [{
+        "id": 201,
+        "loan_type": "personal_loan"
+    }]
+    employment_upsert_mock.upsert.return_value.execute.return_value.data = [{
+        "application_id": 201,
+        "company_name": "Acme",
+        "net_monthly_salary": 75000.0
+    }]
+    res = client.put(
+        "/api/loan-agency/employment?application_id=201",
+        json={"company_name": "Acme", "net_monthly_salary": 75000.0}
+    )
+    assert res.status_code == 200
+    assert employment_upsert_mock.upsert.call_args[1].get("on_conflict") == "application_id"
+    assert employment_upsert_mock.upsert.call_args[0][0]["application_id"] == 201
+
+    # 2. Personal Loan Profile mismatch type returns 400
+    app_select_mock.select.return_value.eq.return_value.limit.return_value.execute.return_value.data = [{
+        "id": 202,
+        "loan_type": "business_loan"
+    }]
+    res_mismatch = client.put(
+        "/api/loan-agency/personal-loans?application_id=202",
+        json={"requested_amount": 100000.0}
+    )
+    assert res_mismatch.status_code == 400
+    assert "not a personal loan" in res_mismatch.json()["detail"].lower()
+
+    # 3. Business Loan Profile success updates lead
+    app_select_mock.select.return_value.eq.return_value.limit.return_value.execute.return_value.data = [{
+        "id": 203,
+        "loan_type": "business_loan"
+    }]
+    business_upsert_mock.upsert.return_value.execute.return_value.data = [{
+        "application_id": 203,
+        "business_name": "ShopCorp",
+        "turnover_year_1": 5000000.0
+    }]
+    res_biz = client.put(
+        "/api/loan-agency/business-loans?application_id=203",
+        json={"business_name": "ShopCorp", "turnover_year_1": 5000000.0}
+    )
+    assert res_biz.status_code == 200
+    assert business_upsert_mock.upsert.call_args[1].get("on_conflict") == "application_id"
+    lead_update_mock.update.assert_called()
+    assert lead_update_mock.update.call_args[0][0]["last_completed_step"] == "business_loan_profile_completed"
+
+    # 4. Used Car Loan Profile success updates lead with used_car_loan_profile_completed
+    app_select_mock.select.return_value.eq.return_value.limit.return_value.execute.return_value.data = [{
+        "id": 204,
+        "loan_type": "used_car_loan"
+    }]
+    used_car_upsert_mock.upsert.return_value.execute.return_value.data = [{
+        "application_id": 204,
+        "car_make": "Honda",
+        "kilometers_driven": 15000
+    }]
+    res_car = client.put(
+        "/api/loan-agency/used-car-loans?application_id=204",
+        json={"car_make": "Honda", "kilometers_driven": "15000.0"}
+    )
+    assert res_car.status_code == 200
+    assert used_car_upsert_mock.upsert.call_args[1].get("on_conflict") == "application_id"
+    car_lead_call = lead_update_mock.update.call_args[0][0]
+    assert car_lead_call["last_completed_step"] == "used_car_loan_profile_completed"
+    assert car_lead_call["application_completed"] is True
+    assert car_lead_call["lead_status"] == "application_completed"
+    assert car_lead_call["call_status"] == "completed"
+    assert car_lead_call["lead_success"] is True
+    assert res_car.json()["success"] is True
+
+
 
 
 

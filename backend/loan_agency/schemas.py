@@ -134,10 +134,67 @@ class LoanApplicationResponse(BaseModel):
 
 
 # ============================================================
+# BASE SARVAM CLEAN MODEL
+# ============================================================
+
+class SarvamCleanBaseModel(BaseModel):
+    """
+    Reusable base model for voice telephony agents (Sarvam AI / Fish Audio / Retell)
+    that normalizes empty strings, string nulls, and coerced numeric values before validation,
+    preventing 422 Unprocessable Entity errors on optional numeric, boolean, or date fields.
+    Preserves legitimate 0, 0.0, and False values.
+    """
+    model_config = ConfigDict(extra="ignore")
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_values(cls, data):
+        if not isinstance(data, dict):
+            return data
+
+        integer_fields = {
+            "application_id",
+            "manufacturing_year",
+            "registration_year",
+            "current_owner_number",
+            "kilometers_driven",
+            "cibil_score",
+            "preferred_tenure_months",
+            "business_start_year",
+        }
+
+        cleaned = {}
+        for key, value in data.items():
+            if isinstance(value, str):
+                value = value.strip()
+                if value.lower() in {
+                    "",
+                    "none",
+                    "null",
+                    "n/a",
+                    "na",
+                    "unknown",
+                }:
+                    cleaned[key] = None
+                    continue
+
+            if key in integer_fields and value is not None:
+                try:
+                    cleaned[key] = int(float(value))
+                    continue
+                except (ValueError, TypeError):
+                    pass
+
+            cleaned[key] = value
+
+        return cleaned
+
+
+# ============================================================
 # COMMON EMPLOYMENT PROFILE
 # ============================================================
 
-class EmploymentProfileUpdate(BaseModel):
+class EmploymentProfileUpdate(SarvamCleanBaseModel):
     """
     Common employment/income profile shared by:
     - Personal Loan
@@ -149,7 +206,8 @@ class EmploymentProfileUpdate(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    employment_type: EmploymentType
+    application_id: Optional[int] = None
+    employment_type: Optional[str] = None
 
     # --------------------------------------------------------
     # SALARIED FIELDS
@@ -207,116 +265,17 @@ class EmploymentProfileUpdate(BaseModel):
     )
 
     # --------------------------------------------------------
-    # CONDITIONAL VALIDATION
+    # SALARY SYNCHRONIZATION
     # --------------------------------------------------------
 
     @model_validator(mode="after")
-    def validate_employment_details(self):
-        """
-        Keep this intentionally moderate for voice-agent usage.
-
-        We enforce the minimum key fields while allowing the agent
-        to save the profile incrementally if needed later.
-        """
-
-        if self.employment_type == EmploymentType.SALARIED:
-
-            if self.net_monthly_salary is None and self.gross_monthly_salary is not None:
-                self.net_monthly_salary = self.gross_monthly_salary
-
-            missing = []
-
-            if not self.company_name:
-                missing.append("company_name")
-
-            if not self.designation:
-                missing.append("designation")
-
-            if self.net_monthly_salary is None:
-                missing.append("net_monthly_salary")
-
-            if missing:
-                raise ValueError(
-                    "For salaried employment, required fields are: "
-                    + ", ".join(missing)
-                )
-
-        elif self.employment_type == EmploymentType.SELF_EMPLOYED:
-
-            missing = []
-
-            if not self.business_name:
-                missing.append("business_name")
-
-            if not self.business_nature:
-                missing.append("business_nature")
-
-            if self.monthly_business_income is None:
-                missing.append("monthly_business_income")
-
-            if missing:
-                raise ValueError(
-                    "For self-employed applicants, required fields are: "
-                    + ", ".join(missing)
-                )
-
+    def sync_salaries(self):
+        if self.net_monthly_salary is None and self.gross_monthly_salary is not None:
+            self.net_monthly_salary = self.gross_monthly_salary
         return self
 
 
-class SarvamCleanBaseModel(BaseModel):
-    """
-    Reusable base model for voice telephony agents (Sarvam AI / Fish Audio / Retell)
-    that normalizes empty strings, string nulls, and coerced numeric values before validation,
-    preventing 422 Unprocessable Entity errors on optional numeric, boolean, or date fields.
-    Preserves legitimate 0, 0.0, and False values.
-    """
-    model_config = ConfigDict(extra="ignore")
-
-    @model_validator(mode="before")
-    @classmethod
-    def normalize_values(cls, data):
-        if not isinstance(data, dict):
-            return data
-
-        integer_fields = {
-            "application_id",
-            "manufacturing_year",
-            "registration_year",
-            "current_owner_number",
-            "kilometers_driven",
-            "cibil_score",
-            "preferred_tenure_months",
-            "business_start_year",
-        }
-
-        cleaned = {}
-        for key, value in data.items():
-            if isinstance(value, str):
-                value = value.strip()
-                if value.lower() in {
-                    "",
-                    "none",
-                    "null",
-                    "n/a",
-                    "na",
-                    "unknown",
-                }:
-                    cleaned[key] = None
-                    continue
-
-            if key in integer_fields and value is not None:
-                try:
-                    cleaned[key] = int(float(value))
-                    continue
-                except (ValueError, TypeError):
-                    pass
-
-            cleaned[key] = value
-
-        return cleaned
-
-
-class EmploymentProfileWithApplicationId(SarvamCleanBaseModel):
+class EmploymentProfileWithApplicationId(EmploymentProfileUpdate):
     """
     Employment profile schema specifically designed for Sarvam AI voice tools/webhooks,
     where application_id is provided directly in the request body.
@@ -324,29 +283,6 @@ class EmploymentProfileWithApplicationId(SarvamCleanBaseModel):
     fields can be submitted flexibly via a single webhook tool.
     """
     application_id: int
-    employment_type: str
-
-    company_name: Optional[str] = None
-    designation: Optional[str] = None
-    industry_type: Optional[str] = None
-    total_experience_years: Optional[float] = None
-    company_joining_date: Optional[str] = None
-    gross_monthly_salary: Optional[float] = None
-    net_monthly_salary: Optional[float] = None
-    annual_income: Optional[float] = None
-    salary_bank_name: Optional[str] = None
-
-    business_name: Optional[str] = None
-    business_nature: Optional[str] = None
-    business_start_year: Optional[int] = None
-    business_vintage_years: Optional[float] = None
-    monthly_business_income: Optional[float] = None
-
-    @model_validator(mode="after")
-    def sync_salaries(self):
-        if self.net_monthly_salary is None and self.gross_monthly_salary is not None:
-            self.net_monthly_salary = self.gross_monthly_salary
-        return self
 
 
 class EmploymentProfileResponse(EmploymentProfileUpdate):
@@ -367,6 +303,8 @@ class EmploymentProfileResponse(EmploymentProfileUpdate):
 # ============================================================
 
 class PersonalLoanProfileUpdate(SarvamCleanBaseModel):
+    application_id: Optional[int] = None
+
     # --------------------------------------------------------
     # Existing employment fields
     #
@@ -535,6 +473,8 @@ class PersonalLoanProfileWithApplicationId(PersonalLoanProfileUpdate):
 # ============================================================
 
 class UsedCarLoanProfileUpdate(SarvamCleanBaseModel):
+    application_id: Optional[int] = None
+
     # --------------------------------------------------------
     # TEMPORARY BACKWARD-COMPATIBLE EMPLOYMENT FIELDS
     #
@@ -682,6 +622,8 @@ class UsedCarLoanProfileWithApplicationId(UsedCarLoanProfileUpdate):
 # ============================================================
 
 class BusinessLoanProfileUpdate(SarvamCleanBaseModel):
+    application_id: Optional[int] = None
+
     # --------------------------------------------------------
     # BUSINESS DETAILS
     # --------------------------------------------------------

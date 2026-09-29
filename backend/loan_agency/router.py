@@ -781,108 +781,43 @@ async def get_all_applications_by_mobile(
 # 2. COMMON EMPLOYMENT PROFILE
 # ============================================================
 
-@router.put(
-    "/employment/{application_id}",
-    response_model=EmploymentProfileResponse
-)
-async def update_employment_profile(
-    application_id: int,
-    payload: EmploymentProfileUpdate
-):
-    """
-    Save applicant income/employment profile.
-
-    This table is shared by:
-    - Personal Loan
-    - Business Loan
-    - Used Car Loan
-
-    application_id must always be the DATABASE loan application ID.
-    """
-
-    try:
-
-        # Confirm parent application exists
-        ensure_application_exists(application_id)
-
-
-        raw_data = payload.model_dump(
-            exclude_none=True
-        )
-
-
-        clean_data = {
-            key: value
-            for key, value in raw_data.items()
-            if key in EMPLOYMENT_COLUMNS
-        }
-
-
-        database_payload = {
-            "application_id": application_id,
-            **clean_data
-        }
-
-
-        response = (
-            supabase
-            .table("employment_profiles")
-            .upsert(
-                database_payload,
-                on_conflict="application_id"
-            )
-            .execute()
-        )
-
-
-        if not response.data:
-
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=(
-                    "Failed to save employment profile "
-                    "in Supabase"
-                )
-            )
-
-
-        return response.data[0]
-
-
-    except HTTPException:
-        raise
-
-
-    except Exception as e:
-
-        logger.exception(
-            "UPDATE EMPLOYMENT PROFILE ERROR"
-        )
-
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
-
-
 @router.put("/employment")
 @router.post("/employment")
-async def save_employment_profile_from_body(
-    payload: EmploymentProfileWithApplicationId
+async def save_employment_profile(
+    payload: EmploymentProfileUpdate,
+    application_id: Optional[int] = None
 ):
     """
-    Direct endpoint specifically for Sarvam AI voice telephony tools and webhooks,
-    where application_id is included in the request body.
+    Save applicant income/employment profile with on_conflict="application_id".
+    Supports application_id provided either as a query param or in the payload body.
     """
-    application_id = payload.application_id
+    app_id = application_id or getattr(payload, "application_id", None)
+    if not app_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="application_id is required"
+        )
+    application_id = app_id
 
-    await ensure_application_exists(application_id)
-
-    data = payload.model_dump(
-        exclude={"application_id"},
-        exclude_none=True
+    app_result = (
+        supabase.table("loan_applications")
+        .select("id, loan_type")
+        .eq("id", application_id)
+        .limit(1)
+        .execute()
     )
+    if not app_result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Application not found"
+        )
+    application = app_result.data[0]
 
+    data = {
+        k: v
+        for k, v in payload.model_dump(exclude_unset=True).items()
+        if v is not None
+    }
     data["application_id"] = application_id
 
     result = (
@@ -894,9 +829,33 @@ async def save_employment_profile_from_body(
         .execute()
     )
 
-    if result.data and len(result.data) > 0:
-        return result.data[0]
-    return data
+    loan_type = application.get("loan_type")
+
+    profile_data = result.data[0] if (result.data and len(result.data) > 0) else data
+    return {
+        "success": True,
+        "application_id": application_id,
+        "loan_type": loan_type,
+        "profile": result.data,
+        **profile_data
+    }
+
+
+save_employment_profile_from_body = save_employment_profile
+
+
+@router.put(
+    "/employment/{application_id}",
+    response_model=EmploymentProfileResponse
+)
+async def update_employment_profile(
+    application_id: int,
+    payload: EmploymentProfileUpdate
+):
+    """
+    Save applicant income/employment profile.
+    """
+    return await save_employment_profile(payload=payload, application_id=application_id)
 
 
 # ============================================================
@@ -957,134 +916,53 @@ async def get_employment_profile(
 # 3. PERSONAL LOAN PROFILE
 # ============================================================
 
-@router.put(
-    "/personal-loans/{application_id}",
-    response_model=PersonalLoanProfileResponse
-)
-async def update_personal_loan_profile(
-    application_id: int,
-    payload: PersonalLoanProfileUpdate
-):
-    """
-    Create/update Personal Loan qualification information.
-    """
-    try:
-        application = ensure_application_exists(
-            application_id
-        )
-
-        # Protect against writing personal-loan data
-        # into a different product application.
-        if application.get("loan_type") != "personal_loan":
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=(
-                    f"Application {application_id} is "
-                    f"{application.get('loan_type')}, "
-                    "not personal_loan"
-                )
-            )
-
-        raw_data = payload.model_dump(
-            exclude_none=True
-        )
-
-        clean_data = {
-            key: value
-            for key, value in raw_data.items()
-            if key in PERSONAL_LOAN_COLUMNS
-        }
-
-        response = (
-            supabase
-            .table("personal_loan_profiles")
-            .upsert(
-                {
-                    "application_id": application_id,
-                    **clean_data
-                },
-                on_conflict="application_id"
-            )
-            .execute()
-        )
-
-        if not response.data:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to update Personal Loan profile"
-            )
-
-        (
-            supabase.table("loan_leads")
-            .update({
-                "lead_status": "application_completed",
-                "call_status": "completed",
-                "application_completed": True,
-                "followup_required": False,
-                "next_followup_at": None,
-                "next_action": None,
-                "lead_success": True
-            })
-            .eq("latest_application_id", application_id)
-            .execute()
-        )
-
-        return response.data[0]
-
-    except Exception as exc:
-        try:
-            (
-                supabase.table("loan_leads")
-                .update({
-                    "lead_status": "application_pending",
-                    "call_status": "followup_pending",
-                    "application_completed": False,
-                    "followup_required": True,
-                    "next_followup_at": (
-                        datetime.now(timezone.utc)
-                        + timedelta(minutes=5)
-                    ).isoformat(),
-                    "last_completed_step": "employment_completed",
-                    "next_action": "complete_personal_loan_profile"
-                })
-                .eq("latest_application_id", application_id)
-                .execute()
-            )
-        except Exception as lead_error:
-            print("Failed to mark lead pending:", lead_error)
-        raise
-
-
 @router.put("/personal-loans")
 @router.post("/personal-loans")
-async def save_personal_loan_profile_from_body(
-    payload: PersonalLoanProfileWithApplicationId
+async def save_personal_loan_profile(
+    payload: PersonalLoanProfileUpdate,
+    application_id: Optional[int] = None
 ):
     """
-    Direct endpoint for Sarvam AI voice telephony tools and webhooks,
-    where application_id is included in the request body.
+    Save personal loan profile with on_conflict="application_id".
     """
-    application_id = payload.application_id
+    app_id = application_id or getattr(payload, "application_id", None)
+    if not app_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="application_id is required"
+        )
+    application_id = app_id
 
-    try:
-        await ensure_application_exists(application_id)
-
-        data = payload.model_dump(
-            exclude={"application_id"},
-            exclude_none=True
+    app_result = (
+        supabase.table("loan_applications")
+        .select("id, loan_type")
+        .eq("id", application_id)
+        .limit(1)
+        .execute()
+    )
+    if not app_result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Application not found"
+        )
+    if app_result.data[0].get("loan_type") != "personal_loan":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Application is not a personal loan"
         )
 
-        clean_data = {
-            key: value
-            for key, value in data.items()
-            if key in PERSONAL_LOAN_COLUMNS
+    try:
+        data = {
+            k: v
+            for k, v in payload.model_dump(exclude_unset=True).items()
+            if v is not None and (k in PERSONAL_LOAN_COLUMNS or k == "application_id")
         }
-        clean_data["application_id"] = application_id
+        data["application_id"] = application_id
 
         result = (
             supabase.table("personal_loan_profiles")
             .upsert(
-                clean_data,
+                data,
                 on_conflict="application_id"
             )
             .execute()
@@ -1099,19 +977,28 @@ async def save_personal_loan_profile_from_body(
         (
             supabase.table("loan_leads")
             .update({
+                "application_completed": True,
                 "lead_status": "application_completed",
                 "call_status": "completed",
-                "application_completed": True,
-                "followup_required": False,
-                "next_followup_at": None,
+                "last_completed_step": "personal_loan_profile_completed",
                 "next_action": None,
-                "lead_success": True
+                "followup_required": False,
+                "retry_required": False,
+                "next_followup_at": None,
+                "lead_success": True,
+                "updated_at": datetime.now(timezone.utc).isoformat()
             })
             .eq("latest_application_id", application_id)
             .execute()
         )
 
-        return result.data[0]
+        profile_data = result.data[0] if (result.data and len(result.data) > 0) else data
+        return {
+            "success": True,
+            "application_id": application_id,
+            "profile": result.data,
+            **profile_data
+        }
 
     except Exception as exc:
         try:
@@ -1133,8 +1020,25 @@ async def save_personal_loan_profile_from_body(
                 .execute()
             )
         except Exception as lead_error:
-            print("Failed to mark lead pending:", lead_error)
+            logger.error(f"Failed to mark lead pending: {lead_error}")
         raise
+
+
+save_personal_loan_profile_from_body = save_personal_loan_profile
+
+
+@router.put(
+    "/personal-loans/{application_id}",
+    response_model=PersonalLoanProfileResponse
+)
+async def update_personal_loan_profile(
+    application_id: int,
+    payload: PersonalLoanProfileUpdate
+):
+    """
+    Create/update Personal Loan qualification information.
+    """
+    return await save_personal_loan_profile(payload=payload, application_id=application_id)
 
 
 @router.get(
@@ -1188,103 +1092,48 @@ async def get_personal_loan_profile(
 # 4. USED CAR LOAN PROFILE
 # ============================================================
 
-@router.put(
-    "/used-car-loans/{application_id}",
-    response_model=UsedCarLoanProfileResponse
-)
-async def update_used_car_loan_profile(
-    application_id: int,
-    payload: UsedCarLoanProfileUpdate
-):
-
-    try:
-
-        application = ensure_application_exists(
-            application_id
-        )
-
-
-        if application.get("loan_type") != "used_car_loan":
-
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=(
-                    f"Application {application_id} is "
-                    f"{application.get('loan_type')}, "
-                    "not used_car_loan"
-                )
-            )
-
-
-        data = payload.model_dump(
-            exclude_none=True
-        )
-        data["application_id"] = application_id
-        data = clean_used_car_data(data)
-
-        print("USED CAR DATA BEFORE SUPABASE:", data)
-
-        response = (
-            supabase
-            .table("used_car_loan_profiles")
-            .upsert(
-                data,
-                on_conflict="application_id"
-            )
-            .execute()
-        )
-
-
-        if not response.data:
-
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=(
-                    "Failed to update Used Car Loan profile"
-                )
-            )
-
-
-        return response.data[0]
-
-
-    except HTTPException:
-        raise
-
-
-    except Exception as e:
-
-        logger.exception(
-            "UPDATE USED CAR LOAN ERROR"
-        )
-
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
-
-
 @router.put("/used-car-loans")
 @router.post("/used-car-loans")
-async def save_used_car_loan_profile_from_body(
-    payload: UsedCarLoanProfileWithApplicationId
+async def save_used_car_loan_profile(
+    payload: UsedCarLoanProfileUpdate,
+    application_id: Optional[int] = None
 ):
     """
-    Direct endpoint for Sarvam AI voice telephony tools and webhooks,
-    where application_id is included in the request body.
+    Save used car loan profile with on_conflict="application_id".
     """
-    application_id = payload.application_id
+    app_id = application_id or getattr(payload, "application_id", None)
+    if not app_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="application_id is required"
+        )
+    application_id = app_id
 
-    await ensure_application_exists(application_id)
-
-    data = payload.model_dump(
-        exclude={"application_id"},
-        exclude_none=True
+    app_result = (
+        supabase.table("loan_applications")
+        .select("id, loan_type")
+        .eq("id", application_id)
+        .limit(1)
+        .execute()
     )
-    data["application_id"] = payload.application_id
-    data = clean_used_car_data(data)
+    if not app_result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Application not found"
+        )
+    if app_result.data[0].get("loan_type") != "used_car_loan":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Application is not a used car loan"
+        )
 
-    print("USED CAR DATA BEFORE SUPABASE:", data)
+    data = {
+        k: v
+        for k, v in payload.model_dump(exclude_unset=True).items()
+        if v is not None
+    }
+    data["application_id"] = application_id
+    data = clean_used_car_data(data)
 
     result = (
         supabase.table("used_car_loan_profiles")
@@ -1295,9 +1144,45 @@ async def save_used_car_loan_profile_from_body(
         .execute()
     )
 
-    if result.data and len(result.data) > 0:
-        return result.data[0]
-    return data
+    (
+        supabase.table("loan_leads")
+        .update({
+            "application_completed": True,
+            "lead_status": "application_completed",
+            "call_status": "completed",
+            "last_completed_step": "used_car_loan_profile_completed",
+            "next_action": None,
+            "followup_required": False,
+            "retry_required": False,
+            "lead_success": True,
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        })
+        .eq("latest_application_id", application_id)
+        .execute()
+    )
+
+    return {
+        "success": True,
+        "application_id": application_id,
+        "profile": result.data
+    }
+
+
+save_used_car_loan_profile_from_body = save_used_car_loan_profile
+
+
+@router.put(
+    "/used-car-loans/{application_id}",
+    response_model=UsedCarLoanProfileResponse
+)
+async def update_used_car_loan_profile(
+    application_id: int,
+    payload: UsedCarLoanProfileUpdate
+):
+    """
+    Create/update Used Car Loan qualification information.
+    """
+    return await save_used_car_loan_profile(payload=payload, application_id=application_id)
 
 
 @router.get(
@@ -1351,6 +1236,86 @@ async def get_used_car_loan_profile(
 # 5. BUSINESS LOAN PROFILE
 # ============================================================
 
+@router.put("/business-loans")
+@router.post("/business-loans")
+async def save_business_loan_profile(
+    payload: BusinessLoanProfileUpdate,
+    application_id: Optional[int] = None
+):
+    """
+    Save business loan profile with on_conflict="application_id".
+    """
+    app_id = application_id or getattr(payload, "application_id", None)
+    if not app_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="application_id is required"
+        )
+    application_id = app_id
+
+    app_result = (
+        supabase.table("loan_applications")
+        .select("id, loan_type")
+        .eq("id", application_id)
+        .limit(1)
+        .execute()
+    )
+    if not app_result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Application not found"
+        )
+    if app_result.data[0].get("loan_type") != "business_loan":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Application is not a business loan"
+        )
+
+    data = {
+        k: v
+        for k, v in payload.model_dump(exclude_unset=True).items()
+        if v is not None and (k in BUSINESS_LOAN_COLUMNS or k == "application_id")
+    }
+    data["application_id"] = application_id
+
+    result = (
+        supabase.table("business_loan_profiles")
+        .upsert(
+            data,
+            on_conflict="application_id"
+        )
+        .execute()
+    )
+
+    (
+        supabase.table("loan_leads")
+        .update({
+            "application_completed": True,
+            "lead_status": "application_completed",
+            "call_status": "completed",
+            "last_completed_step": "business_loan_profile_completed",
+            "next_action": None,
+            "followup_required": False,
+            "retry_required": False,
+            "lead_success": True,
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        })
+        .eq("latest_application_id", application_id)
+        .execute()
+    )
+
+    profile_data = result.data[0] if (result.data and len(result.data) > 0) else data
+    return {
+        "success": True,
+        "application_id": application_id,
+        "profile": result.data,
+        **profile_data
+    }
+
+
+save_business_loan_profile_from_body = save_business_loan_profile
+
+
 @router.put(
     "/business-loans/{application_id}",
     response_model=BusinessLoanProfileResponse
@@ -1359,118 +1324,10 @@ async def update_business_loan_profile(
     application_id: int,
     payload: BusinessLoanProfileUpdate
 ):
-
-    try:
-
-        application = ensure_application_exists(
-            application_id
-        )
-
-
-        if application.get("loan_type") != "business_loan":
-
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=(
-                    f"Application {application_id} is "
-                    f"{application.get('loan_type')}, "
-                    "not business_loan"
-                )
-            )
-
-
-        raw_data = payload.model_dump(
-            exclude_none=True
-        )
-
-
-        clean_data = {
-            key: value
-            for key, value in raw_data.items()
-            if key in BUSINESS_LOAN_COLUMNS
-        }
-
-
-        response = (
-            supabase
-            .table("business_loan_profiles")
-            .upsert(
-                {
-                    "application_id": application_id,
-                    **clean_data
-                },
-                on_conflict="application_id"
-            )
-            .execute()
-        )
-
-
-        if not response.data:
-
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=(
-                    "Failed to update Business Loan profile"
-                )
-            )
-
-
-        return response.data[0]
-
-
-    except HTTPException:
-        raise
-
-
-    except Exception as e:
-
-        logger.exception(
-            "UPDATE BUSINESS LOAN ERROR"
-        )
-
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
-
-
-@router.put("/business-loans")
-@router.post("/business-loans")
-async def save_business_loan_profile_from_body(
-    payload: BusinessLoanProfileWithApplicationId
-):
     """
-    Direct endpoint for Sarvam AI voice telephony tools and webhooks,
-    where application_id is included in the request body.
+    Create/update Business Loan qualification information.
     """
-    application_id = payload.application_id
-
-    await ensure_application_exists(application_id)
-
-    data = payload.model_dump(
-        exclude={"application_id"},
-        exclude_none=True
-    )
-
-    clean_data = {
-        key: value
-        for key, value in data.items()
-        if key in BUSINESS_LOAN_COLUMNS
-    }
-    clean_data["application_id"] = application_id
-
-    result = (
-        supabase.table("business_loan_profiles")
-        .upsert(
-            clean_data,
-            on_conflict="application_id"
-        )
-        .execute()
-    )
-
-    if result.data and len(result.data) > 0:
-        return result.data[0]
-    return clean_data
+    return await save_business_loan_profile(payload=payload, application_id=application_id)
 
 
 @router.get(

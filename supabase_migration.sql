@@ -364,3 +364,60 @@ CREATE INDEX IF NOT EXISTS idx_loan_leads_phone ON loan_leads(phone_number);
 CREATE INDEX IF NOT EXISTS idx_loan_leads_call_status ON loan_leads(call_status);
 CREATE INDEX IF NOT EXISTS idx_loan_leads_next_call ON loan_leads(next_call_at) WHERE ready_for_call = true;
 
+-- ============================================================
+-- Ensure UNIQUE (application_id) on all 4 loan profile tables
+-- ============================================================
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conrelid = 'public.employment_profiles'::regclass 
+        AND contype = 'u' 
+        AND pg_get_constraintdef(oid) LIKE '%(application_id)%'
+    ) THEN
+        ALTER TABLE public.employment_profiles ADD CONSTRAINT employment_profiles_application_id_key UNIQUE (application_id);
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conrelid = 'public.personal_loan_profiles'::regclass 
+        AND contype = 'u' 
+        AND pg_get_constraintdef(oid) LIKE '%(application_id)%'
+    ) THEN
+        ALTER TABLE public.personal_loan_profiles ADD CONSTRAINT personal_loan_profiles_application_id_key UNIQUE (application_id);
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conrelid = 'public.business_loan_profiles'::regclass 
+        AND contype = 'u' 
+        AND pg_get_constraintdef(oid) LIKE '%(application_id)%'
+    ) THEN
+        ALTER TABLE public.business_loan_profiles ADD CONSTRAINT business_loan_profiles_application_id_key UNIQUE (application_id);
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conrelid = 'public.used_car_loan_profiles'::regclass 
+        AND contype = 'u' 
+        AND pg_get_constraintdef(oid) LIKE '%(application_id)%'
+    ) THEN
+        ALTER TABLE public.used_car_loan_profiles ADD CONSTRAINT used_car_loan_profiles_application_id_key UNIQUE (application_id);
+    END IF;
+END $$;
+
+-- Verify UNIQUE (application_id) on all four profile tables:
+-- SELECT
+--     conrelid::regclass AS table_name,
+--     conname,
+--     pg_get_constraintdef(oid)
+-- FROM pg_constraint
+-- WHERE conrelid IN (
+--     'public.employment_profiles'::regclass,
+--     'public.personal_loan_profiles'::regclass,
+--     'public.business_loan_profiles'::regclass,
+--     'public.used_car_loan_profiles'::regclass
+-- )
+-- AND contype = 'u';
+
