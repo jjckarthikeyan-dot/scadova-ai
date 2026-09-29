@@ -39,7 +39,8 @@ def process_post_call_followup(
     lead: Dict[str, Any],
     max_attempts: int = MAX_ATTEMPTS,
     test_followup_minutes: int = TEST_FOLLOWUP_MINUTES,
-    now: Optional[datetime] = None
+    now: Optional[datetime] = None,
+    call_outcome: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     After each call, if the application is still incomplete:
@@ -75,6 +76,62 @@ def process_post_call_followup(
     if now is None:
         now = datetime.now(timezone.utc)
 
+    # Explicit customer decline terminates immediately
+    if call_outcome == "declined" or str(lead.get("lead_status") or "").lower() == "declined":
+        return {
+            "lead_status": "declined",
+            "call_status": "declined",
+            "followup_required": False,
+            "retry_required": False,
+            "next_followup_at": None,
+            "next_retry_at": None
+        }
+
+    # Completed outcomes
+    if call_outcome == "completed" or lead.get("application_completed") is True:
+        return {
+            "lead_status": "application_completed",
+            "call_status": "completed",
+            "application_completed": True,
+            "followup_required": False,
+            "retry_required": False,
+            "next_followup_at": None,
+            "next_retry_at": None,
+            "lead_success": True
+        }
+
+    # Policy 1: Calling retries (no answer / busy / application not started)
+    if call_outcome in ("no_answer", "busy", "unanswered"):
+        today_str = str(now.date())
+        lead_daily_date = str(lead.get("daily_retry_date") or "")
+        current_daily = 0 if lead_daily_date != today_str else int(lead.get("daily_retry_count") or 0)
+        attempt = (lead.get("retry_count") or 0) + 1
+        new_daily = current_daily + 1
+
+        if new_daily < 2:
+            # First daily follow-up spaced by +4 hours
+            next_retry = now + timedelta(hours=4)
+            return {
+                "retry_count": attempt,
+                "daily_retry_count": new_daily,
+                "daily_retry_date": today_str,
+                "retry_required": True,
+                "next_retry_at": next_retry.isoformat(),
+                "call_status": "retry_pending"
+            }
+        else:
+            # Reached max 2 attempts today -> reset and resume next day
+            next_day = (now + timedelta(days=1)).replace(hour=4, minute=0, second=0, microsecond=0)
+            return {
+                "retry_count": attempt,
+                "daily_retry_count": new_daily,
+                "daily_retry_date": today_str,
+                "retry_required": True,
+                "next_retry_at": next_day.isoformat(),
+                "call_status": "daily_retry_limit_reached"
+            }
+
+    # Policy 2: Incomplete application follow-ups (1/day for 3 days)
     attempt = (lead.get("retry_count") or 0) + 1
 
     if attempt < max_attempts:
@@ -91,10 +148,11 @@ def process_post_call_followup(
             "retry_count": attempt,
             "followup_required": False,
             "next_followup_at": None,
-            "call_status": "followup_exhausted"
+            "call_status": "followup_exhausted",
+            "lead_status": "exhausted"
         }
 
-    # Also record each attempt
+    # Also record each attempt: followup_1, followup_2, followup_3
     if attempt == 1:
         update_data["followup_1_at"] = now.isoformat()
         update_data["followup_1_status"] = "attempted"
@@ -147,8 +205,20 @@ async def dispatch_lead_call(
         "full_name": lead.get("full_name") or "",
         "city": lead.get("city") or "",
         "preferred_language": lead.get("preferred_language") or "",
-        "lead_status": lead.get("lead_status") or ""
+        "lead_status": lead.get("lead_status") or "",
+        "call_reason": reason
     }
+
+    # For pending applications, pass existing context to Rupa
+    app_id = lead.get("latest_application_id") or lead.get("application_id")
+    if app_id:
+        app_variables["application_id"] = str(app_id)
+    if lead.get("loan_type"):
+        app_variables["loan_type"] = str(lead["loan_type"])
+    if lead.get("last_completed_step"):
+        app_variables["last_completed_step"] = str(lead["last_completed_step"])
+    if lead.get("next_action"):
+        app_variables["next_action"] = str(lead["next_action"])
 
     user = {
         "user_phone_number": phone,
@@ -217,12 +287,22 @@ async def dispatch_lead_call(
 
     sarvam_result = response.json()
 
-    # Mark lead as queued
+    # Mark lead as queued and track daily retry count
     try:
-        sb.table("loan_leads").update({
+        now_iso = now.isoformat()
+        today_str = str(now.date())
+        lead_daily_date = str(lead.get("daily_retry_date") or "")
+        current_daily = 0 if lead_daily_date != today_str else int(lead.get("daily_retry_count") or 0)
+
+        upd = {
             "call_status": "queued",
-            "last_call_at": now.isoformat()
-        }).eq("id", lead["id"]).execute()
+            "last_call_at": now_iso
+        }
+        if reason in ("retry", "new_lead"):
+            upd["daily_retry_count"] = current_daily + 1
+            upd["daily_retry_date"] = today_str
+
+        sb.table("loan_leads").update(upd).eq("id", lead["id"]).execute()
     except Exception as update_err:
         logger.warning(f"Could not update lead {lead.get('id')} to queued: {update_err}")
 

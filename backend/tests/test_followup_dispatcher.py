@@ -202,3 +202,122 @@ def test_auto_dispatch_endpoint(mock_run_dispatch):
     assert response.json()["lead_id"] == 10
     mock_run_dispatch.assert_called_once()
 
+
+def test_post_call_no_answer_daily_policy():
+    now = datetime(2026, 9, 29, 10, 0, 0, tzinfo=timezone.utc)
+    lead = {
+        "id": 1,
+        "retry_count": 0,
+        "daily_retry_count": 0,
+        "daily_retry_date": "2026-09-29"
+    }
+
+    # Attempt 1: Spaces by +4 hours
+    res1 = process_post_call_followup(lead, now=now, call_outcome="no_answer")
+    assert res1["daily_retry_count"] == 1
+    assert res1["retry_required"] is True
+    assert res1["next_retry_at"] == (now + timedelta(hours=4)).isoformat()
+    assert res1["call_status"] == "retry_pending"
+
+    # Attempt 2: Reaches daily retry limit -> schedules tomorrow
+    lead["daily_retry_count"] = 1
+    lead["retry_count"] = 1
+    res2 = process_post_call_followup(lead, now=now + timedelta(hours=4), call_outcome="no_answer")
+    assert res2["daily_retry_count"] == 2
+    assert res2["retry_required"] is True
+    assert res2["call_status"] == "daily_retry_limit_reached"
+
+
+def test_post_call_terminal_policies():
+    now = datetime.now(timezone.utc)
+    lead = {"id": 2, "application_completed": True}
+
+    res_comp = process_post_call_followup(lead, now=now, call_outcome="completed")
+    assert res_comp["application_completed"] is True
+    assert res_comp["followup_required"] is False
+    assert res_comp["retry_required"] is False
+    assert res_comp["lead_success"] is True
+
+    res_dec = process_post_call_followup(lead, now=now, call_outcome="declined")
+    assert res_dec["lead_status"] == "declined"
+    assert res_dec["call_status"] == "declined"
+    assert res_dec["followup_required"] is False
+    assert res_dec["retry_required"] is False
+
+
+@pytest.mark.asyncio
+async def test_run_outbound_dispatch_priority_and_application_context():
+    from backend.loan_agency.sarvam_router import run_outbound_dispatch
+
+    now = datetime.now(timezone.utc)
+    due_iso = (now - timedelta(minutes=5)).isoformat()
+
+    # Lead 1: Incomplete application follow-up with existing context
+    lead_followup = {
+        "id": 201,
+        "phone_number": "+919888800001",
+        "full_name": "Deepak Sharma",
+        "city": "Hyderabad",
+        "preferred_language": "Telugu",
+        "lead_status": "application_pending",
+        "call_status": "followup_pending",
+        "followup_required": True,
+        "next_followup_at": due_iso,
+        "latest_application_id": 105,
+        "loan_type": "personal_loan",
+        "last_completed_step": "employment_completed",
+        "next_action": "complete_personal_loan_profile"
+    }
+
+    mock_sb = MagicMock()
+    # Mock no callbacks, no reschedules, no technical retries, but an application follow-up
+    def mock_table(name):
+        t_mock = MagicMock()
+        if name == "loan_leads":
+            sel = MagicMock()
+            sel.eq.return_value.neq.return_value.lte.return_value.order.return_value.limit.return_value.execute.return_value.data = []
+            # When querying followup_required
+            def eq_handler(col, val):
+                eq_mock = MagicMock()
+                if col == "callback_required":
+                    eq_mock.neq.return_value.lte.return_value.order.return_value.limit.return_value.execute.return_value.data = []
+                elif col == "reschedule_required":
+                    eq_mock.neq.return_value.lte.return_value.order.return_value.limit.return_value.execute.return_value.data = []
+                elif col == "retry_required":
+                    eq_mock.in_.return_value.neq.return_value.lte.return_value.order.return_value.limit.return_value.execute.return_value.data = []
+                    eq_mock.neq.return_value.lte.return_value.order.return_value.limit.return_value.execute.return_value.data = []
+                elif col == "followup_required":
+                    eq_mock.neq.return_value.lte.return_value.order.return_value.limit.return_value.execute.return_value.data = [lead_followup]
+                return eq_mock
+            t_mock.select.return_value.eq.side_effect = eq_handler
+            t_mock.update.return_value.eq.return_value.execute.return_value.data = [{**lead_followup, "call_status": "queued"}]
+        return t_mock
+
+    mock_sb.table.side_effect = mock_table
+
+    with patch("backend.loan_agency.sarvam_router.supabase", mock_sb), \
+         patch("httpx.AsyncClient.post") as mock_http_post:
+        mock_resp = MagicMock()
+        mock_resp.is_error = False
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"cohort_id": "c_201", "status": "queued"}
+        mock_http_post.return_value = mock_resp
+
+        result = await run_outbound_dispatch(campaign_id="test_camp")
+
+        assert result["success"] is True
+        assert result["lead_id"] == 201
+        assert result["reason"] == "application_followup"
+
+        # Verify Sarvam HTTP payload received the application context
+        mock_http_post.assert_called_once()
+        sent_payload = mock_http_post.call_args[1]["json"]
+        sent_user = sent_payload["users"][0]
+        app_vars = sent_user["app_variables"]
+
+        assert app_vars["application_id"] == "105"
+        assert app_vars["loan_type"] == "personal_loan"
+        assert app_vars["last_completed_step"] == "employment_completed"
+        assert app_vars["next_action"] == "complete_personal_loan_profile"
+        assert app_vars["call_reason"] == "application_followup"
+

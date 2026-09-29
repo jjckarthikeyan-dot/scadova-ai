@@ -537,23 +537,29 @@ async def handle_campaign_webhook(payload: Dict[str, Any]):
             except Exception as lead_err:
                 logger.warning(f"Could not fetch lead by phone {normalized}: {lead_err}")
 
-            # After each call, if the application is still incomplete:
+            # After each call, evaluate disposition based on two-policy model:
             if lead:
                 is_completed = (
                     lead.get("application_completed") is True
                     or lead.get("lead_status") == "application_completed"
                     or payload.get("application_completed") is True
+                    or completion_status == "completed"
                 )
-                if not is_completed:
-                    followup_update = process_post_call_followup(lead)
-                    update_data.update(followup_update)
-                elif completion_status == "completed":
+                if is_completed:
                     update_data["lead_status"] = "application_completed"
                     update_data["call_status"] = "completed"
                     update_data["application_completed"] = True
                     update_data["followup_required"] = False
+                    update_data["retry_required"] = False
                     update_data["next_followup_at"] = None
+                    update_data["next_retry_at"] = None
                     update_data["lead_success"] = True
+                elif connectivity_status in ["no_answer", "unanswered", "busy"]:
+                    followup_update = process_post_call_followup(lead, call_outcome="no_answer")
+                    update_data.update(followup_update)
+                else:
+                    followup_update = process_post_call_followup(lead, call_outcome="application_followup")
+                    update_data.update(followup_update)
 
             try:
                 res = (
@@ -810,12 +816,19 @@ async def get_cohort_status(cohort_id: str, campaign_id: Optional[str] = None):
 
 async def run_outbound_dispatch(campaign_id: Optional[str] = None):
     """
-    Core outbound dispatch engine that selects the next lead based on priority:
-    1. callback: callback_required == True and callback_at <= now
-    2. reschedule: reschedule_required == True and reschedule_at <= now
-    3. retry: retry_required == True and next_retry_at <= now
-    4. followup: followup_required == True and next_followup_at <= now and retry_count < 3
-    5. new_lead: lead_status == 'new' and call_status == 'not_called'
+    Production outbound scheduler enforcing strict two-policy follow-up rules:
+    Priority Order:
+      1. Customer-requested callback due (callback_required == True and callback_at <= now)
+      2. Customer reschedule due (reschedule_required == True and reschedule_at <= now)
+      3. Technical retry due (retry_required == True and technical error and next_retry_at <= now)
+      4. Incomplete application follow-up due (followup_required == True and next_followup_at <= now, max 3 across 3 days)
+      5. New lead / not-started lead (max 2 attempts per day, spaced by +4 hours)
+
+    Never dispatches when:
+      - application_completed == True
+      - lead_success == True
+      - lead_status in ('declined', 'exhausted', 'completed')
+      - call_status == 'queued'
 
     Streams the selected lead to the Sarvam campaign cohort and marks the lead as 'queued'.
     """
@@ -835,11 +848,22 @@ async def run_outbound_dispatch(campaign_id: Optional[str] = None):
 
     now = datetime.now(timezone.utc)
     now_iso = now.isoformat()
+    today_str = str(now.date())
 
     lead = None
     selected_reason = None
 
-    # 1. CALLBACK CHECK
+    def is_terminal(ld: Dict[str, Any]) -> bool:
+        if ld.get("application_completed") is True:
+            return True
+        if ld.get("lead_success") is True:
+            return True
+        st = str(ld.get("lead_status") or "").lower()
+        if st in ("declined", "exhausted", "completed"):
+            return True
+        return False
+
+    # 1. PRIORITY 1: CUSTOMER-REQUESTED CALLBACK DUE
     cb_res = (
         supabase.table("loan_leads")
         .select("*")
@@ -847,14 +871,17 @@ async def run_outbound_dispatch(campaign_id: Optional[str] = None):
         .neq("call_status", "queued")
         .lte("callback_at", now_iso)
         .order("callback_at")
-        .limit(1)
+        .limit(10)
         .execute()
     )
     if cb_res.data:
-        lead = cb_res.data[0]
-        selected_reason = "callback"
+        for item in cb_res.data:
+            if not is_terminal(item):
+                lead = item
+                selected_reason = "callback"
+                break
 
-    # 2. RESCHEDULE CHECK
+    # 2. PRIORITY 2: CUSTOMER RESCHEDULE DUE
     if not lead:
         rs_res = (
             supabase.table("loan_leads")
@@ -863,30 +890,37 @@ async def run_outbound_dispatch(campaign_id: Optional[str] = None):
             .neq("call_status", "queued")
             .lte("reschedule_at", now_iso)
             .order("reschedule_at")
-            .limit(1)
+            .limit(10)
             .execute()
         )
         if rs_res.data:
-            lead = rs_res.data[0]
-            selected_reason = "reschedule"
+            for item in rs_res.data:
+                if not is_terminal(item):
+                    lead = item
+                    selected_reason = "reschedule"
+                    break
 
-    # 3. RETRY CHECK
+    # 3. PRIORITY 3: TECHNICAL RETRY DUE
     if not lead:
-        rt_res = (
+        tech_res = (
             supabase.table("loan_leads")
             .select("*")
             .eq("retry_required", True)
+            .in_("last_call_status", ["failed", "network_error"])
             .neq("call_status", "queued")
             .lte("next_retry_at", now_iso)
             .order("next_retry_at")
-            .limit(1)
+            .limit(10)
             .execute()
         )
-        if rt_res.data:
-            lead = rt_res.data[0]
-            selected_reason = "retry"
+        if tech_res.data:
+            for item in tech_res.data:
+                if not is_terminal(item):
+                    lead = item
+                    selected_reason = "technical_retry"
+                    break
 
-    # 4. FOLLOW-UP CHECK
+    # 4. PRIORITY 4: INCOMPLETE APPLICATION FOLLOW-UP DUE (1/day for 3 days)
     if not lead:
         fu_res = (
             supabase.table("loan_leads")
@@ -900,12 +934,38 @@ async def run_outbound_dispatch(campaign_id: Optional[str] = None):
         )
         if fu_res.data:
             for item in fu_res.data:
-                if (item.get("retry_count") or 0) < 3:
+                if is_terminal(item):
+                    continue
+                fu_count = sum(1 for k in ["followup_1_at", "followup_2_at", "followup_3_at"] if item.get(k))
+                if fu_count < 3 and (item.get("retry_count") or 0) < 3:
                     lead = item
-                    selected_reason = "followup"
+                    selected_reason = "application_followup"
                     break
 
-    # 5. NEW LEAD CHECK
+    # 5. PRIORITY 5: NEW LEAD / NOT-STARTED LEAD (Max 2 attempts per day)
+    if not lead:
+        # Check calling retries (no answer / busy)
+        rt_res = (
+            supabase.table("loan_leads")
+            .select("*")
+            .eq("retry_required", True)
+            .neq("call_status", "queued")
+            .lte("next_retry_at", now_iso)
+            .order("next_retry_at")
+            .limit(10)
+            .execute()
+        )
+        if rt_res.data:
+            for item in rt_res.data:
+                if is_terminal(item):
+                    continue
+                lead_daily_date = str(item.get("daily_retry_date") or "")
+                daily_count = 0 if lead_daily_date != today_str else int(item.get("daily_retry_count") or 0)
+                if daily_count < 2:
+                    lead = item
+                    selected_reason = "retry"
+                    break
+
     if not lead:
         nl_res = (
             supabase.table("loan_leads")
@@ -913,12 +973,15 @@ async def run_outbound_dispatch(campaign_id: Optional[str] = None):
             .eq("lead_status", "new")
             .eq("call_status", "not_called")
             .order("id")
-            .limit(1)
+            .limit(10)
             .execute()
         )
         if nl_res.data:
-            lead = nl_res.data[0]
-            selected_reason = "new_lead"
+            for item in nl_res.data:
+                if not is_terminal(item):
+                    lead = item
+                    selected_reason = "new_lead"
+                    break
 
     # 6. NO LEADS FOUND
     if not lead:
@@ -939,14 +1002,26 @@ async def run_outbound_dispatch(campaign_id: Optional[str] = None):
         }
 
     # --------------------------------------------
-    # 7. BUILD SARVAM USER
+    # 7. BUILD SARVAM USER & APPLICATION CONTEXT
     # --------------------------------------------
     app_variables = {
         "full_name": lead.get("full_name") or "",
         "city": lead.get("city") or "",
         "preferred_language": lead.get("preferred_language") or "",
-        "lead_status": lead.get("lead_status") or ""
+        "lead_status": lead.get("lead_status") or "",
+        "call_reason": selected_reason
     }
+
+    # For pending applications, pass existing context to Rupa
+    app_id = lead.get("latest_application_id") or lead.get("application_id")
+    if app_id:
+        app_variables["application_id"] = str(app_id)
+    if lead.get("loan_type"):
+        app_variables["loan_type"] = str(lead["loan_type"])
+    if lead.get("last_completed_step"):
+        app_variables["last_completed_step"] = str(lead["last_completed_step"])
+    if lead.get("next_action"):
+        app_variables["next_action"] = str(lead["next_action"])
 
     user = {
         "user_phone_number": phone,
@@ -1021,14 +1096,22 @@ async def run_outbound_dispatch(campaign_id: Optional[str] = None):
     sarvam_result = response.json()
 
     # --------------------------------------------
-    # 10. MARK AS QUEUED
+    # 9. MARK AS QUEUED & TRACK DAILY RETRY COUNTER
     # --------------------------------------------
+    update_payload = {
+        "call_status": "queued",
+        "last_call_at": now.isoformat(),
+        "updated_at": now.isoformat()
+    }
+    if selected_reason in ("retry", "new_lead"):
+        lead_daily_date = str(lead.get("daily_retry_date") or "")
+        current_daily = 0 if lead_daily_date != today_str else int(lead.get("daily_retry_count") or 0)
+        update_payload["daily_retry_count"] = current_daily + 1
+        update_payload["daily_retry_date"] = today_str
+
     (
         supabase.table("loan_leads")
-        .update({
-            "call_status": "queued",
-            "last_call_at": now.isoformat()
-        })
+        .update(update_payload)
         .eq("id", lead["id"])
         .execute()
     )

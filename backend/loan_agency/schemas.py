@@ -1014,6 +1014,8 @@ class LeadResponse(BaseModel):
     priority: Optional[int] = 1
     attempt_count: Optional[int] = 0
     next_call_at: Optional[Any] = None
+    daily_retry_count: Optional[int] = 0
+    daily_retry_date: Optional[Any] = None
 
     created_at: Optional[Any] = None
     updated_at: Optional[Any] = None
@@ -1060,7 +1062,10 @@ class LeadRetryState(BaseModel):
     retry_required: bool = False
     retry_count: int = 0
     next_retry_at: Optional[Any] = None
+    daily_retry_count: int = 0
+    daily_retry_date: Optional[Any] = None
     max_retries: int = 3
+    max_daily_retries: int = 2
     max_retries_reached: bool = False
 
 

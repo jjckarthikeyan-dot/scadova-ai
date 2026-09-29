@@ -357,7 +357,9 @@ ALTER TABLE loan_leads
     ADD COLUMN IF NOT EXISTS call_after TIMESTAMPTZ,
     ADD COLUMN IF NOT EXISTS priority INTEGER DEFAULT 1,
     ADD COLUMN IF NOT EXISTS attempt_count INTEGER DEFAULT 0,
-    ADD COLUMN IF NOT EXISTS next_call_at TIMESTAMPTZ;
+    ADD COLUMN IF NOT EXISTS next_call_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS daily_retry_count INT DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS daily_retry_date DATE;
 
 -- Indices for outbound scheduler and lookup speed
 CREATE INDEX IF NOT EXISTS idx_loan_leads_phone ON loan_leads(phone_number);
