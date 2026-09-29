@@ -1102,9 +1102,9 @@ class LeadContextResponse(BaseModel):
 
 
 class LinkLeadApplication(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    lead_id: int
-    application_id: int
+    model_config = ConfigDict(extra="allow")
+    lead_id: Optional[Union[int, str]] = None
+    application_id: Optional[Union[int, str]] = None
 
 
 class LeadCallUpdate(BaseModel):

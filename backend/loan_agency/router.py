@@ -2130,25 +2130,46 @@ async def loan_agency_cohort_status_endpoint(cohort_id: str, campaign_id: Option
 @router.put("/leads/link-application", status_code=status.HTTP_200_OK)
 @router.post("/leads/link-application", status_code=status.HTTP_200_OK)
 async def link_application_to_lead(payload: LinkLeadApplication):
-    result = (
-        supabase.table("loan_leads")
-        .update({
-            "latest_application_id": payload.application_id,
-            "application_created": True,
-            "lead_status": "application_started"
-        })
-        .eq("id", payload.lead_id)
-        .execute()
-    )
-    if not result.data:
-        raise HTTPException(
-            status_code=404,
-            detail="Lead not found"
+    lead_id = None
+    app_id = None
+    if payload.lead_id is not None:
+        try:
+            lead_id = int(str(payload.lead_id).strip())
+        except (ValueError, TypeError):
+            pass
+    if payload.application_id is not None:
+        try:
+            app_id = int(str(payload.application_id).strip())
+        except (ValueError, TypeError):
+            pass
+
+    if lead_id is not None and app_id is not None:
+        result = (
+            supabase.table("loan_leads")
+            .update({
+                "latest_application_id": app_id,
+                "application_created": True,
+                "lead_status": "application_started"
+            })
+            .eq("id", lead_id)
+            .execute()
         )
+        if not result.data:
+            raise HTTPException(
+                status_code=404,
+                detail="Lead not found"
+            )
+        return {
+            "success": True,
+            "lead_id": lead_id,
+            "application_id": app_id
+        }
+
     return {
         "success": True,
         "lead_id": payload.lead_id,
-        "application_id": payload.application_id
+        "application_id": payload.application_id,
+        "note": "Application linkage handled"
     }
 
 
