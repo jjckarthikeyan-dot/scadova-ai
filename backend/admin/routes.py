@@ -167,9 +167,144 @@ class AgentCreditTopUpPayload(BaseModel):
     note: Optional[str] = "Manual admin top-up"
 
 
+class PhoneAllocatePayload(BaseModel):
+    phone_id_or_number: str
+    business_id: Optional[int] = None
+    agent_id: Optional[str] = None
+
+
+class AgentAllocatePayload(BaseModel):
+    agent_id: str
+    business_id: Optional[int] = None
+
+
+class ClientOnboardingPayload(BaseModel):
+    business_name: str
+    spoken_name: Optional[str] = None
+    industry: Optional[str] = "loan_agency"
+    phone: Optional[str] = ""
+    email: Optional[str] = ""
+    city: Optional[str] = "Hyderabad"
+    state: Optional[str] = "Telangana"
+    address: Optional[str] = ""
+    user_id: Optional[str] = None
+    password: Optional[str] = None
+    plan_tier: Optional[str] = "growth"
+    setup_fee_paid: Optional[bool] = False
+    setup_fee_amount: Optional[float] = 0.0
+    monthly_fee: Optional[float] = None
+    allocated_minutes: Optional[int] = 1500
+    sarvam_agent_id: Optional[str] = "MKN-Financi-3af4be5e-3450"
+    voice_id: Optional[str] = "rupa"
+    language: Optional[str] = "hi-IN"
+    phone_number_id: Optional[str] = None
+
+
+class AgentRuntimeConfigPayload(BaseModel):
+    system_prompt: Optional[str] = None
+    first_message: Optional[str] = None
+    voice: Optional[str] = None
+    voice_id: Optional[str] = None
+    language: Optional[str] = None
+    attached_tools: Optional[List[str]] = None
+    variables: Optional[List[str]] = None
+
+
+class PlatformSettingsPayload(BaseModel):
+    usd_to_inr_rate: Optional[float] = None
+    default_currency: Optional[str] = None
+    company_name: Optional[str] = None
+    support_email: Optional[str] = None
+    support_phone: Optional[str] = None
+    sarvam_campaign_id: Optional[str] = None
+    sarvam_app_id: Optional[str] = None
+    minute_rate_sarvam_inr: Optional[float] = None
+
+
 # ============================================================
 # 1. DASHBOARD OVERVIEW & STATS
 # ============================================================
+
+@router.get("/dashboard-metrics")
+async def get_dashboard_metrics(usd_to_inr: Optional[float] = None):
+    """Returns comprehensive Indian Businesses telemetry, KPIs, Sarvam phone inventory, and 14-day trends."""
+    return data_store.get_dashboard_metrics(usd_to_inr=usd_to_inr)
+
+
+@router.get("/sarvam/phone-numbers")
+async def get_sarvam_phone_numbers():
+    """List all available and allocated Sarvam telephony lines and DIDs."""
+    return data_store.get_sarvam_phone_numbers()
+
+
+@router.post("/sarvam/phone-numbers/allocate")
+async def allocate_sarvam_phone(payload: PhoneAllocatePayload):
+    """Allocate or release a Sarvam virtual telephony phone line."""
+    try:
+        return data_store.allocate_sarvam_phone(payload.phone_id_or_number, payload.business_id, payload.agent_id)
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+
+
+@router.get("/sarvam/agents")
+async def get_sarvam_agents_catalog():
+    """List all created and available Sarvam Voice Agents across Indian languages."""
+    return data_store.get_sarvam_agents_catalog()
+
+
+@router.post("/sarvam/agents/allocate")
+async def allocate_sarvam_agent(payload: AgentAllocatePayload):
+    """Allocate a Sarvam agent to a specific business entity."""
+    try:
+        return data_store.allocate_sarvam_agent(payload.agent_id, payload.business_id)
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+
+
+@router.post("/onboard-client", status_code=status.HTTP_201_CREATED)
+async def onboard_client(payload: ClientOnboardingPayload):
+    """
+    Conversational Question-Flow Onboarding for Indian Enterprises:
+    Creates business, generates Client Portal credentials, invoices, and connects Sarvam agent & phone line.
+    """
+    return data_store.onboard_client_questionnaire(payload.model_dump())
+
+
+@router.get("/businesses/{biz_id}/preview")
+async def get_business_preview(biz_id: str):
+    """Returns Client Dashboard Preview with linked agent, editable prompt/tools, transcripts, audio, and credentials."""
+    return data_store.get_business_client_preview(biz_id)
+
+
+@router.put("/businesses/{biz_id}/agent-config")
+async def update_agent_runtime_config(biz_id: str, payload: AgentRuntimeConfigPayload):
+    """Updates the live agent prompt, tools, variables, and voice for a business."""
+    try:
+        return data_store.update_agent_runtime_config(biz_id, payload.model_dump(exclude_unset=True))
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+
+
+@router.post("/businesses/{biz_id}/reset-settings")
+async def reset_client_settings(biz_id: str):
+    """Resets client agent prompt and tools to default industry baseline."""
+    try:
+        return data_store.reset_client_settings(biz_id)
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+
+
+@router.get("/settings")
+async def get_platform_settings():
+    """Get system settings, USD to INR live exchange rate, and profile."""
+    return data_store.get_platform_settings()
+
+
+@router.put("/settings")
+async def update_platform_settings(payload: PlatformSettingsPayload):
+    """Update system settings and USD to INR exchange rates."""
+    return data_store.update_platform_settings(payload.model_dump(exclude_unset=True))
+
 
 @router.get("/stats")
 async def get_dashboard_stats():

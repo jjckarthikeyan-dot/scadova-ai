@@ -40,6 +40,7 @@ from .schemas import (
     LeadResponse,
     LeadContextResponse,
     LinkLeadApplication,
+    LeadCallUpdate,
 )
 
 
@@ -2148,6 +2149,150 @@ async def link_application_to_lead(payload: LinkLeadApplication):
         "success": True,
         "lead_id": payload.lead_id,
         "application_id": payload.application_id
+    }
+
+
+@router.put("/leads/update-from-call", status_code=status.HTTP_200_OK)
+@router.post("/leads/update-from-call", status_code=status.HTTP_200_OK)
+@router.patch("/leads/update-from-call", status_code=status.HTTP_200_OK)
+async def update_lead_from_call(payload: LeadCallUpdate):
+    """
+    Receives live call outcomes and dispositions from Sarvam AI voice agent tool:
+    PUT /api/loan-agency/leads/update-from-call
+    Accepts PUT, POST, and PATCH methods.
+    Updates call_status, lead_status, callbacks, application progress, and follow-up states in loan_leads.
+    """
+    now = datetime.now(timezone.utc)
+    now_iso = now.isoformat()
+
+    # 1. Identify the lead
+    lead = None
+    target_id = payload.lead_id or payload.id
+    if target_id is not None:
+        try:
+            res = supabase.table("loan_leads").select("*").eq("id", target_id).limit(1).execute()
+            if res.data:
+                lead = res.data[0]
+        except Exception as e:
+            logger.debug(f"Lead lookup by id error: {e}")
+
+    if not lead and payload.phone_number:
+        normalized = normalize_lead_phone(payload.phone_number)
+        try:
+            res = supabase.table("loan_leads").select("*").eq("phone_number", normalized).limit(1).execute()
+            if res.data:
+                lead = res.data[0]
+            else:
+                raw_res = supabase.table("loan_leads").select("*").eq("phone_number", payload.phone_number.strip()).limit(1).execute()
+                if raw_res.data:
+                    lead = raw_res.data[0]
+        except Exception as e:
+            logger.debug(f"Lead lookup by phone error: {e}")
+
+    # Fallback to recent queued lead if still not matched
+    if not lead:
+        try:
+            q_res = supabase.table("loan_leads").select("*").eq("call_status", "queued").order("last_call_at", desc=True).limit(1).execute()
+            if q_res.data:
+                lead = q_res.data[0]
+        except Exception:
+            pass
+
+    if not lead:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Lead not found for provided lead_id or phone_number"
+        )
+
+    # 2. Build updates
+    update_data: Dict[str, Any] = {
+        "updated_at": now_iso,
+        "last_call_at": now_iso
+    }
+
+    if payload.call_status is not None:
+        update_data["call_status"] = payload.call_status
+        update_data["last_call_status"] = payload.call_status
+    if payload.lead_status is not None:
+        update_data["lead_status"] = payload.lead_status
+
+    # Outcome handling using policy rules
+    outcome = payload.call_outcome or payload.call_status
+    if outcome:
+        from .dispatcher import process_post_call_followup
+        try:
+            policy_updates = process_post_call_followup(lead, now=now, call_outcome=str(outcome).lower())
+            update_data.update(policy_updates)
+        except Exception as pe:
+            logger.debug(f"Policy follow-up error: {pe}")
+
+    if payload.callback_required is not None:
+        update_data["callback_required"] = payload.callback_required
+    if payload.callback_at is not None:
+        update_data["callback_at"] = payload.callback_at
+
+    if payload.reschedule_required is not None:
+        update_data["reschedule_required"] = payload.reschedule_required
+    if payload.reschedule_at is not None:
+        update_data["reschedule_at"] = payload.reschedule_at
+
+    app_id = payload.latest_application_id or payload.application_id
+    if app_id is not None:
+        update_data["latest_application_id"] = app_id
+        update_data["application_created"] = True
+
+    if payload.application_created is not None:
+        update_data["application_created"] = payload.application_created
+    if payload.application_completed is not None:
+        update_data["application_completed"] = payload.application_completed
+        if payload.application_completed:
+            update_data["followup_required"] = False
+            update_data["retry_required"] = False
+            update_data["lead_success"] = True
+
+    if payload.last_completed_step is not None:
+        update_data["last_completed_step"] = payload.last_completed_step
+    if payload.next_action is not None:
+        update_data["next_action"] = payload.next_action
+    if payload.preferred_language is not None:
+        update_data["preferred_language"] = payload.preferred_language
+    if payload.call_success is not None:
+        update_data["call_success"] = payload.call_success
+    if payload.lead_success is not None:
+        update_data["lead_success"] = payload.lead_success
+
+    # 3. Update Supabase
+    try:
+        upd_res = supabase.table("loan_leads").update(update_data).eq("id", lead["id"]).execute()
+        updated_record = upd_res.data[0] if upd_res.data else {**lead, **update_data}
+    except Exception as e:
+        logger.exception("Error updating lead from call")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update lead: {str(e)}"
+        )
+
+    # 4. Record to call_sessions if sarvam_call_id present
+    if payload.sarvam_call_id:
+        try:
+            cs_data = {
+                "sarvam_call_id": payload.sarvam_call_id,
+                "status": payload.call_status or "completed",
+                "call_outcome": outcome,
+                "duration_seconds": payload.duration_seconds or 0,
+                "updated_at": now_iso
+            }
+            supabase.table("call_sessions").update(cs_data).eq("sarvam_call_id", payload.sarvam_call_id).execute()
+        except Exception as cse:
+            logger.debug(f"Call session update note: {cse}")
+
+    return {
+        "success": True,
+        "lead_id": lead["id"],
+        "lead_status": updated_record.get("lead_status"),
+        "call_status": updated_record.get("call_status"),
+        "updated_fields": update_data,
+        "lead": updated_record
     }
 
 

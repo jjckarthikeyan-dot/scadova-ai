@@ -321,3 +321,47 @@ async def test_run_outbound_dispatch_priority_and_application_context():
         assert app_vars["next_action"] == "complete_personal_loan_profile"
         assert app_vars["call_reason"] == "application_followup"
 
+
+def test_update_lead_from_call_put_and_post():
+    mock_lead = {
+        "id": 99,
+        "phone_number": "+919876543210",
+        "lead_status": "new",
+        "call_status": "queued",
+        "application_completed": False
+    }
+
+    mock_sb = MagicMock()
+    mock_select = MagicMock()
+    mock_select.select.return_value.eq.return_value.limit.return_value.execute.return_value.data = [mock_lead]
+    mock_select.update.return_value.eq.return_value.execute.return_value.data = [{**mock_lead, "call_status": "completed", "lead_status": "application_started"}]
+    mock_sb.table.return_value = mock_select
+
+    with patch("backend.loan_agency.router.supabase", mock_sb):
+        # 1. Test PUT /api/loan-agency/leads/update-from-call
+        put_payload = {
+            "lead_id": 99,
+            "call_status": "completed",
+            "lead_status": "application_started",
+            "last_completed_step": "employment_completed",
+            "next_action": "collect_personal_loan"
+        }
+        res_put = client.put("/api/loan-agency/leads/update-from-call", json=put_payload)
+        assert res_put.status_code == 200, res_put.text
+        put_data = res_put.json()
+        assert put_data["success"] is True
+        assert put_data["lead_id"] == 99
+
+        # 2. Test POST /api/loan-agency/leads/update-from-call
+        res_post = client.post("/api/loan-agency/leads/update-from-call", json=put_payload)
+        assert res_post.status_code == 200, res_post.text
+
+        # 3. Test PATCH /api/loan-agency/leads/update-from-call
+        res_patch = client.patch("/api/loan-agency/leads/update-from-call", json=put_payload)
+        assert res_patch.status_code == 200, res_patch.text
+
+        # 4. Test root alias PUT /leads/update-from-call
+        res_root = client.put("/leads/update-from-call", json=put_payload)
+        assert res_root.status_code == 200, res_root.text
+
+

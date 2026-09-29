@@ -1107,4 +1107,32 @@ class LinkLeadApplication(BaseModel):
     application_id: int
 
 
+class LeadCallUpdate(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    lead_id: Optional[Union[int, str]] = None
+    id: Optional[Union[int, str]] = None
+    phone_number: Optional[str] = None
+    call_status: Optional[str] = None
+    lead_status: Optional[str] = None
+    call_outcome: Optional[str] = None
+    callback_required: Optional[bool] = None
+    callback_at: Optional[Any] = None
+    reschedule_required: Optional[bool] = None
+    reschedule_at: Optional[Any] = None
+    latest_application_id: Optional[Union[int, str]] = None
+    application_id: Optional[Union[int, str]] = None
+    last_completed_step: Optional[str] = None
+    next_action: Optional[str] = None
+    preferred_language: Optional[str] = None
+    notes: Optional[str] = None
+    sarvam_call_id: Optional[str] = None
+    duration_seconds: Optional[int] = None
+    application_completed: Optional[bool] = None
+    application_created: Optional[bool] = None
+    call_success: Optional[bool] = None
+    lead_success: Optional[bool] = None
+
+
+
 

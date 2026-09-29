@@ -48,6 +48,7 @@ const navSections = [
   {
     title: 'System',
     items: [
+      { to: '/settings', icon: Settings, label: 'Settings' },
       { to: '/prompts', icon: BookOpenCheck, label: 'Rules' },
       { to: '/logs', icon: ClipboardList, label: 'System Logs' },
     ],

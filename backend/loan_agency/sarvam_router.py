@@ -14,7 +14,8 @@ from .schemas import (
     SarvamDeploymentRequest,
     SarvamOutboundCallRequest,
     SarvamWebhookPayload,
-    LoanApplicationCreate
+    LoanApplicationCreate,
+    LeadCallUpdate
 )
 from .router import (
     save_employment_profile_from_body,
@@ -1220,6 +1221,18 @@ async def post_call_process_endpoint(payload: Dict[str, Any]):
         "update_data": update_data,
         "lead": updated_lead
     }
+
+
+@router.put("/leads/update-from-call", status_code=status.HTTP_200_OK)
+@router.post("/leads/update-from-call", status_code=status.HTTP_200_OK)
+@router.patch("/leads/update-from-call", status_code=status.HTTP_200_OK)
+async def sarvam_update_lead_from_call(payload: LeadCallUpdate):
+    """
+    Direct handler for Sarvam AI telephony tool calling /api/sarvam/leads/update-from-call.
+    Accepts PUT, POST, and PATCH methods.
+    """
+    from .router import update_lead_from_call
+    return await update_lead_from_call(payload)
 
 
 @router.get("/outbound/dispatcher/status", status_code=status.HTTP_200_OK)

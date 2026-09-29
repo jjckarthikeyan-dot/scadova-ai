@@ -16,6 +16,7 @@ import ApiExplorerPage from './pages/ApiExplorerPage';
 import PromptsPage from './pages/PromptsPage';
 import UsagePage from './pages/UsagePage';
 import LogsPage from './pages/LogsPage';
+import SettingsPage from './pages/SettingsPage';
 
 const pageTitles = {
   '/': { title: 'Platform Dashboard', subtitle: 'Executive overview & voice operations' },
@@ -30,6 +31,7 @@ const pageTitles = {
   '/prompts': { title: 'Conversation Rules', subtitle: 'Audit and compare saved rule sets' },
   '/usage': { title: 'Usage & Credits', subtitle: 'Agent minutes, balances and Fish Audio sessions' },
   '/logs': { title: 'System Logs', subtitle: 'Runtime events & audit trail' },
+  '/settings': { title: 'System Settings', subtitle: 'Live currency ($ to ₹), Sarvam AI & platform configuration' },
 };
 
 function AppLayout() {
@@ -66,6 +68,7 @@ function AppLayout() {
             <Route path="/prompts" element={<PromptsPage />} />
             <Route path="/usage" element={<UsagePage />} />
             <Route path="/logs" element={<LogsPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
           </Routes>
         </main>
       </div>
